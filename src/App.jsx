@@ -64,9 +64,11 @@ function daysUntilBid(memberRecord) {
 
 // Can create/manage events
 function canManageEvents(user) { return ["Admin","Leader","Elder","Member"].includes(getEffectiveRole(user)); }
+// canEvt is the canonical gate used throughout the app for event actions
+const canEvt = canManageEvents;
 
-// Can edit boss timer
-function canEditBossTimer(user) { return ["Admin","Leader","Elder","Member"].includes(getEffectiveRole(user)); }
+// Can edit boss timer — open to all logged-in users (including Recruits)
+function canEditBossTimer(user) { return !!user; }
 
 // Can manage members (add/edit/remove/change roles)
 function canManageMembers(user) { return ["Admin","Leader"].includes(getEffectiveRole(user)); }
@@ -363,7 +365,7 @@ export default function App() {
     return ()=>clearInterval(t);
   },[]);
 
-  const [sessionRestored, setSessionRestored] = useState(false);
+  const sessionRestoredRef = useRef(false);
   useEffect(()=>{
     let mounted = true;
     const restoreSession = async () => {
@@ -385,11 +387,11 @@ export default function App() {
           setCurrentUser({ id: session.user.id, email: displayEmail, role, name, points: profile?.points || 0, created_at: profile?.created_at });
         }
       } catch {}
-      if(mounted) setSessionRestored(true);
+      if(mounted) sessionRestoredRef.current = true;
     };
     restoreSession();
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session && sessionRestored) setCurrentUser(null);
+      if (!session && sessionRestoredRef.current) setCurrentUser(null);
     });
     return () => { mounted=false; subscription.unsubscribe(); };
   },[]);
@@ -723,6 +725,10 @@ export default function App() {
   };
 
   const handleRemoveMember = async(id)=>{
+    const target = members.find(m=>m.id===id);
+    if (target && ADMIN_EMAIL && target.email === ADMIN_EMAIL) {
+      showToast("❌ Admin account cannot be deleted","error"); return;
+    }
     try { await supabase.from("members").delete().eq("id",id); } catch {}
     setMembers(prev=>prev.filter(m=>m.id!==id));
     showToast("🗑️ Member removed","warn");
@@ -1432,7 +1438,7 @@ export default function App() {
   // EVENTS
   const renderEvents = () => (
     <div>
-      {canManageEvents(currentUser) && (
+      {canEvt(currentUser) && (
         <div style={{marginBottom:18}}>
           <button onClick={()=>setShowCreateEvent(true)} style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",border:"none",borderRadius:11,padding:"10px 20px",color:"#fff",cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"'Exo 2',sans-serif"}}>+ Create Event</button>
         </div>
@@ -1450,7 +1456,7 @@ export default function App() {
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 <span style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>+{ev.points} pts</span>
-                {canManageEvents(currentUser) && (
+                {canEvt(currentUser) && (
                   <>
                     <button onClick={()=>setMarkEventId(markEventId===ev.id?null:ev.id)} style={{background:"rgba(99,102,241,0.12)",border:"1px solid rgba(99,102,241,0.25)",borderRadius:7,padding:"4px 10px",color:"#a5b4fc",fontSize:11,cursor:"pointer"}}>Attendance</button>
                     <button onClick={()=>handleDeleteEvent(ev.id)} style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:7,padding:"4px 8px",color:"#f87171",fontSize:11,cursor:"pointer"}}>✕</button>
@@ -1459,7 +1465,7 @@ export default function App() {
               </div>
             </div>
             <div style={{color:"#3d5070",fontSize:11,marginTop:6}}>{ev.date}{ev.server&&` · ${ev.server}`}</div>
-            {markEventId===ev.id && canManageEvents(currentUser) && (
+            {markEventId===ev.id && canEvt(currentUser) && (
               <div style={{marginTop:14,borderTop:"1px solid rgba(255,255,255,0.05)",paddingTop:14}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                   <div style={{color:"#3d5070",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em"}}>Mark Attendance</div>
@@ -1480,7 +1486,7 @@ export default function App() {
         );
       })}
 
-      {showCreateEvent && canManageEvents(currentUser) && (
+      {showCreateEvent && canEvt(currentUser) && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}>
           <div style={{background:"#0f1320",border:"1px solid rgba(255,255,255,0.1)",borderRadius:20,padding:28,width:380}}>
             <h3 style={{color:"#e2e8f0",fontFamily:"'Rajdhani',sans-serif",fontSize:20,marginBottom:18}}>Create Event</h3>
