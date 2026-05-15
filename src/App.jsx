@@ -9,7 +9,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ── Admin email (app creator/maintainer) ─────────────────────────────────────
 // Set this to your real email. This user gets the "Admin" role automatically.
-const ADMIN_EMAIL = ""; // e.g. "Admin"
+const ADMIN_EMAIL = "user@gmail.com"; // ← YOUR admin email here (must match Supabase auth email)
 
 // ── Role hierarchy ────────────────────────────────────────────────────────────
 // Admin    - full access, can redesign, edit core
@@ -1714,7 +1714,8 @@ export default function App() {
         <button onClick={()=>exportToExcel(false)} style={{background:"rgba(52,211,153,0.1)",border:"1px solid rgba(52,211,153,0.25)",borderRadius:10,padding:"10px 20px",color:"#34d399",cursor:"pointer",fontSize:13,fontWeight:600,fontFamily:"'Exo 2',sans-serif"}}>📊 Export to Excel</button>
       </div>
 
-      {/* Permission Matrix */}
+      {/* Permission Matrix — Admin & Leader only */}
+      {canManageMembers(currentUser) && (
       <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:22}}>
         <div style={{color:"#3d5070",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:14}}>Role Permissions</div>
         <div style={{overflowX:"auto"}}>
@@ -1740,6 +1741,7 @@ export default function App() {
           </table>
         </div>
       </div>
+      )}
 
       {/* Discord */}
       <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:22}}>
