@@ -9,7 +9,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ── Admin email (app creator/maintainer) ─────────────────────────────────────
 // Set this to your real email. This user gets the "Admin" role automatically.
-const ADMIN_EMAIL = "user@gmail.com"; // ← YOUR admin email here (must match Supabase auth email)
+const ADMIN_EMAIL = "frederickcalibo1902@gmail.com"; // ← YOUR admin email here (must match Supabase auth email)
 
 // ── Role hierarchy ────────────────────────────────────────────────────────────
 // Admin    - full access, can redesign, edit core
