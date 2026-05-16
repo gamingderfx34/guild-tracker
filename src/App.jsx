@@ -240,7 +240,7 @@ export default function App() {
   const [addChannelModal, setAddChannelModal]       = useState(null); // group name
   const [attendance, setAttendance]   = useState([]);
   const [auctionItems, setAuctionItems] = useState(()=>lsGet("rampageAuction", INIT_AUCTION_ITEMS));
-  const [winners, setWinners]         = useState(()=>lsGet("rampageWinners", []));
+  const [winners, setWinners]         = useState([]);
   const [search, setSearch]           = useState("");
   const [killFlash, setKillFlash]     = useState(null);
   const [showAddMember, setShowAddMember] = useState(false);
@@ -266,7 +266,7 @@ export default function App() {
   const [bossImageModal, setBossImageModal] = useState(null);
 
   // ── Events & Attendance ──────────────────────────────────────────────────
-  const [events, setEvents]           = useState(()=>lsGet("rampageEvents",[]));
+  const [events, setEvents]           = useState([]);
   const [showCreateEvent, setShowCreateEvent] = useState(false);
   const [eventForm, setEventForm]     = useState({ type:"sindri", name:"", date:today, notes:"", server:"", points:10 });
   const [markEventId, setMarkEventId] = useState(null); // event being marked for attendance
@@ -299,8 +299,6 @@ export default function App() {
   useEffect(()=>{ lsSet("rampageLindwurm", lindwurmBosses); }, [lindwurmBosses]);
   useEffect(()=>{ lsSet("rampageHilders", hildersBosses); }, [hildersBosses]);
   useEffect(()=>{ lsSet("rampageAuction", auctionItems); }, [auctionItems]);
-  useEffect(()=>{ lsSet("rampageWinners", winners); }, [winners]);
-  useEffect(()=>{ lsSet("rampageEvents", events); }, [events]);
   useEffect(()=>{ lsSet("rampageEventPoints", eventPoints); }, [eventPoints]);
   useEffect(()=>{ lsSet("rampageAttCodes", eventAttCodes); }, [eventAttCodes]);
 
@@ -370,6 +368,8 @@ export default function App() {
   // ── Load members from Supabase ────────────────────────────────────────────
   useEffect(()=>{ loadMembers(); },[]);
   useEffect(()=>{ loadAuctionItems(); },[]);
+  useEffect(()=>{ loadEvents(); },[]);
+  useEffect(()=>{ loadWinners(); },[]);
 
   // ── Supabase real-time subscriptions ─────────────────────────────────────
   useEffect(()=>{
@@ -387,9 +387,25 @@ export default function App() {
       .on("postgres_changes",{event:"DELETE",schema:"public",table:"members"},()=>{ loadMembers(); })
       .subscribe();
 
+    // Events real-time — so all users see new events, attendance changes instantly
+    const eventsSub = supabase
+      .channel("events_rt")
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},()=>{ loadEvents(); })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"events"},()=>{ loadEvents(); })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"events"},()=>{ loadEvents(); })
+      .subscribe();
+
+    // Winners real-time
+    const winnersSub = supabase
+      .channel("winners_rt")
+      .on("postgres_changes",{event:"*",schema:"public",table:"winners"},()=>{ loadWinners(); })
+      .subscribe();
+
     return ()=>{
       supabase.removeChannel(auctionSub);
       supabase.removeChannel(membersSub);
+      supabase.removeChannel(eventsSub);
+      supabase.removeChannel(winnersSub);
     };
   },[]);
 
@@ -418,6 +434,36 @@ export default function App() {
         })));
       }
     } catch {}
+  };
+
+  const loadEvents = async()=>{
+    try {
+      const { data, error } = await supabase.from("events").select("*").order("created_at",{ascending:false});
+      if (!error && data) {
+        setEvents(data.map(ev=>({
+          ...ev,
+          attendance: typeof ev.attendance === "string" ? JSON.parse(ev.attendance) : (ev.attendance||{}),
+        })));
+      } else {
+        // Fallback: try localStorage
+        setEvents(lsGet("rampageEvents",[]));
+      }
+    } catch {
+      setEvents(lsGet("rampageEvents",[]));
+    }
+  };
+
+  const loadWinners = async()=>{
+    try {
+      const { data, error } = await supabase.from("winners").select("*").order("created_at",{ascending:false});
+      if (!error && data) {
+        setWinners(data);
+      } else {
+        setWinners(lsGet("rampageWinners",[]));
+      }
+    } catch {
+      setWinners(lsGet("rampageWinners",[]));
+    }
   };
 
   // Persist members locally as backup
@@ -747,7 +793,7 @@ export default function App() {
   };
 
   // ── Events ────────────────────────────────────────────────────────────────
-  const handleCreateEvent = ()=>{
+  const handleCreateEvent = async()=>{
     if(!eventForm.name.trim()) { showToast("❌ Event name required","error"); return; }
     const evType = EVENT_TYPES.find(e=>e.id===eventForm.type);
     const ev = {
@@ -762,20 +808,37 @@ export default function App() {
       points: parseInt(eventForm.points) || eventPoints[eventForm.type] || evType?.defaultPoints || 5,
       attendance: {},
       createdBy: currentUser?.name,
-      createdAt: new Date().toISOString(),
+      created_at: new Date().toISOString(),
     };
-    setEvents(prev=>[ev,...prev]);
+    try {
+      const dbEv = {...ev, attendance: JSON.stringify({})};
+      const { error } = await supabase.from("events").insert([dbEv]);
+      if (error) throw error;
+      // Real-time sub will call loadEvents() automatically
+    } catch {
+      // Fallback: local state only
+      setEvents(prev=>[ev,...prev]);
+      lsSet("rampageEvents", [ev, ...lsGet("rampageEvents",[])]);
+    }
     setShowCreateEvent(false);
-    const firstType = EVENT_TYPES[0];
-    setEventForm({ type:"sindri", name:"", date:today, notes:"", server:"", points: eventPoints["sindri"] || firstType?.defaultPoints || 10 });
+    setEventForm({ type:"sindri", name:"", date:today, notes:"", server:"", points: eventPoints["sindri"] || 10 });
     showToast(`✅ Event "${ev.name}" created!`);
   };
 
   const handleMarkEventAttendance = async(eventId, memberId, present)=>{
+    // Optimistic local update first
+    let updatedAttendance = {};
     setEvents(prev=>prev.map(ev=>{
       if(ev.id!==eventId) return ev;
-      return {...ev, attendance:{...ev.attendance, [memberId]:present}};
+      updatedAttendance = {...(ev.attendance||{}), [memberId]:present};
+      return {...ev, attendance:updatedAttendance};
     }));
+    // Sync to Supabase
+    try {
+      const ev = events.find(e=>e.id===eventId);
+      const newAtt = {...(ev?.attendance||{}), [memberId]:present};
+      await supabase.from("events").update({attendance: JSON.stringify(newAtt)}).eq("id",eventId);
+    } catch {}
     // Give/remove points
     const ev = events.find(e=>e.id===eventId);
     if(!ev) return;
@@ -794,18 +857,23 @@ export default function App() {
     showToast("✅ All members marked present!");
   };
 
-  const handleDeleteEvent = (eventId)=>{
+  const handleDeleteEvent = async(eventId)=>{
+    try { await supabase.from("events").delete().eq("id",eventId); } catch {}
     setEvents(prev=>prev.filter(e=>e.id!==eventId));
     showToast("🗑️ Event deleted","warn");
   };
 
   // ── Attendance Code Security ───────────────────────────────────────────────
-  const generateAttCode = (eventId)=>{
-    // Generate a 6-char alphanumeric code
+  const generateAttCode = async(eventId)=>{
     const code = Math.random().toString(36).substring(2,8).toUpperCase();
-    setEventAttCodes(prev=>({...prev,[eventId]:{ code, expiresAt: Date.now() + 10*60*1000, usedBy:[] }}));
+    const codeData = { code, expiresAt: Date.now() + 10*60*1000, usedBy:[] };
+    setEventAttCodes(prev=>({...prev,[eventId]:codeData}));
     setGeneratedCode(code);
-    showToast(`🔑 Code generated: ${code}`)
+    // Also write the code into the events table so other admins can see it if needed
+    try {
+      await supabase.from("events").update({ att_code: JSON.stringify(codeData) }).eq("id",eventId);
+    } catch {}
+    showToast(`🔑 Code generated: ${code}`);
     return code;
   };
 
@@ -942,17 +1010,37 @@ export default function App() {
   };
 
   const handleAnnounceWinner = async(item)=>{
-    const w = {id:Date.now(),itemName:item.name,winner:item.highBidder,points:item.currentBid,date:new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}),claimed:false,rarity:item.rarity,image:item.image};
-    setWinners(prev=>[...prev,w]);
-    try { await supabase.from("auction_items").update({locked:true,winner:item.highBidder}).eq("id",item.id); await loadAuctionItems(); } catch {
+    const w = {
+      id: String(Date.now()),
+      itemName: item.name, winner: item.highBidder, points: item.currentBid,
+      date: new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}),
+      claimed: false, rarity: item.rarity, image: item.image,
+      created_at: new Date().toISOString(),
+    };
+    try {
+      await supabase.from("winners").insert([w]);
+      await supabase.from("auction_items").update({locked:true,winner:item.highBidder}).eq("id",item.id);
+      await loadAuctionItems();
+      // Real-time sub handles loadWinners()
+    } catch {
+      setWinners(prev=>[...prev,w]);
       setAuctionItems(prev=>prev.map(i=>i.id===item.id?{...i,locked:true,winner:item.highBidder}:i));
     }
     if(discordConnected) showToast("📢 Discord notified: Winner announced!","info");
     showToast(`🏆 ${item.highBidder} won ${item.name}!`);
   };
 
-  const handleClaimWinner = (id)=>{ setWinners(prev=>prev.map(w=>w.id===id?{...w,claimed:true}:w)); showToast("✅ Item marked as claimed!"); };
-  const handleRemoveWinner = (id)=>{ setWinners(prev=>prev.filter(w=>w.id!==id)); showToast("🗑️ Removed","warn"); };
+  const handleClaimWinner = async(id)=>{
+    try { await supabase.from("winners").update({claimed:true}).eq("id",id); } catch {}
+    setWinners(prev=>prev.map(w=>w.id===id?{...w,claimed:true}:w));
+    showToast("✅ Item marked as claimed!");
+  };
+
+  const handleRemoveWinner = async(id)=>{
+    try { await supabase.from("winners").delete().eq("id",id); } catch {}
+    setWinners(prev=>prev.filter(w=>w.id!==id));
+    showToast("🗑️ Removed","warn");
+  };
 
   // ── Excel Export ──────────────────────────────────────────────────────────
   const exportToExcel = (silent=false)=>{
