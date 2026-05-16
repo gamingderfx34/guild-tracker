@@ -499,9 +499,16 @@ export default function App() {
     if (bossTimerDb.length === 0) return;
     const applyTimers = (prev) => prev.map(b=>{
       const rec = bossTimerDb.find(r=>r.id===b.id);
-      if (!rec) return b;
-      // Always prefer DB image over local state (DB is source of truth for images)
-      const image = (rec.image && rec.image.length > 0) ? rec.image : b.image;
+      // Even if no exact-ID match, look for any sibling channel with same name that has an image
+      const siblingWithImage = !rec?.image
+        ? bossTimerDb.find(r=>r.id!==b.id && r.image && r.image.length>0 && prev.some(pb=>pb.id===r.id && pb.name===b.name))
+        : null;
+      if (!rec && !siblingWithImage) return b;
+      // DB image always wins over local state
+      const image = (rec?.image && rec.image.length>0) ? rec.image
+                  : (siblingWithImage?.image && siblingWithImage.image.length>0) ? siblingWithImage.image
+                  : b.image;
+      if (!rec) return {...b, image};
       // Calculate current secs from killed_at timestamp
       if (!rec.killed_at) return {...b, secs:0, elapsed:0, image};
       const killedAt = new Date(rec.killed_at).getTime();
@@ -771,57 +778,64 @@ export default function App() {
   };
 
   // Update boss image for any group — uploads to Supabase storage boss-images bucket
+  // Applies the image to ALL channels of the same boss (same name within the group)
   const handleBossImageUploadGroup = async (file, id, group)=>{
     if (!file || !id || !group) return;
     showToast("⏳ Uploading image...","info");
     try {
       const ext = file.name.split('.').pop() || 'png';
-      const path = `${group}_${id}_${Date.now()}.${ext}`;
-      const { data, error: upErr } = await supabase.storage
+      // Use boss name as path key so all channels share the same image file
+      const path = `${group}_${id}.${ext}`;
+      const { error: upErr } = await supabase.storage
         .from('boss-images')
         .upload(path, file, { upsert: true, contentType: file.type });
       if (upErr) {
         console.error("Supabase upload error:", upErr);
         showToast(`❌ Upload failed: ${upErr.message}`,"error");
-        // Fallback: base64
-        const reader = new FileReader();
-        reader.onload = ev=>{
-          getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:ev.target.result}:b));
-          setBossImageModal(null); showToast("🖼️ Saved locally (Supabase failed)","warn");
-        };
-        reader.readAsDataURL(file);
         return;
       }
       const { data: urlData } = supabase.storage.from('boss-images').getPublicUrl(path);
       const publicUrl = urlData?.publicUrl;
-      if (publicUrl) {
-        // Use stable URL (no cache-bust) so all users share the same key in DB
-        const stableUrl = publicUrl;
-        getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:stableUrl}:b));
-        // Save image URL to Supabase boss_timers so ALL users see it in real-time.
-        // Upsert first (handles existing rows), then insert if row is missing (boss never killed).
+      if (!publicUrl) { showToast("❌ Could not get image URL","error"); return; }
+
+      // Stable URL — no cache-bust suffix so all users get the same DB key
+      const imageUrl = publicUrl;
+
+      // Find the boss name so we can apply image to ALL channels of same boss
+      const allBosses = [...bosses,...myrkrheimBosses,...folkvangNormal,...folkvangInterserver,...canyonBosses,...lindwurmBosses,...hildersBosses];
+      const targetBoss = allBosses.find(b=>b.id===id);
+      const bossName = targetBoss?.name;
+
+      // Update local state: all channels with same name in same group get the image
+      const setter = getSetterByGroup(group);
+      setter(prev=>prev.map(b=>{
+        if(bossName ? b.name===bossName : b.id===id) return {...b, image:imageUrl};
+        return b;
+      }));
+
+      // Save to Supabase boss_timers for every channel of this boss so all users sync
+      const channelIds = bossName
+        ? allBosses.filter(b=>b.group===group && b.name===bossName).map(b=>b.id)
+        : [id];
+
+      for (const bId of channelIds) {
         try {
-          const { error: imgErr } = await supabase.from("boss_timers")
-            .upsert({id, image:stableUrl, updated_at:new Date().toISOString()},{onConflict:"id"});
-          if(imgErr) {
-            // Row doesn't exist yet (boss never killed) — insert a bare image row
+          const { error: upsErr } = await supabase.from("boss_timers")
+            .upsert({id:bId, image:imageUrl, updated_at:new Date().toISOString()},{onConflict:"id"});
+          if(upsErr) {
+            // Row doesn't exist yet (boss never killed) — insert bare image row
             const { error: insErr } = await supabase.from("boss_timers")
-              .insert({id, image:stableUrl, killed_at:null, respawn_secs:0, updated_at:new Date().toISOString()});
-            if(insErr) console.error("Boss image insert error:", insErr);
+              .insert({id:bId, image:imageUrl, killed_at:null, respawn_secs:0, updated_at:new Date().toISOString()});
+            if(insErr) console.error("Boss image insert error:", bId, insErr);
           }
-        } catch(dbErr) { console.error("Boss image DB error:", dbErr); }
-        setBossImageModal(null);
-        showToast("🖼️ Boss image uploaded!");
+        } catch(dbErr) { console.error("Boss image DB error:", bId, dbErr); }
       }
+
+      setBossImageModal(null);
+      showToast("🖼️ Boss image updated for all channels!");
     } catch(e) {
       console.error("Upload exception:", e);
-      // Fallback: base64
-      const reader = new FileReader();
-      reader.onload = ev=>{
-        getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:ev.target.result}:b));
-        setBossImageModal(null); showToast("🖼️ Saved locally","warn");
-      };
-      reader.readAsDataURL(file);
+      showToast("❌ Upload failed","error");
     }
   };
 
@@ -2937,15 +2951,17 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, k
                       </div>
                       {/* Status badge */}
                       <span style={{display:"inline-flex",padding:"2px 8px",borderRadius:5,background:bs.bg,color:bs.color,border:`1px solid ${bs.border}`,fontSize:9.5,fontWeight:700,flexShrink:0}}>{st}</span>
-                      {/* Action buttons — all users can mark killed & set timer (syncs in real-time) */}
-                      <div style={{display:"flex",gap:5,flexShrink:0}}>
-                        <button className="ghost-btn" onClick={()=>onKill(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                          style={{fontSize:9.5,padding:"3px 8px",color:mode.color,borderColor:`${mode.color}40`}}>☠️ Kill</button>
-                        <button className="ghost-btn" onClick={()=>onReset(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                          style={{fontSize:9.5,padding:"3px 8px"}}>🔴 Live</button>
-                        <button className="ghost-btn" onClick={()=>onSetTimer(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                          style={{fontSize:9.5,padding:"3px 8px"}}>⏱ Timer</button>
-                      </div>
+                      {/* Action buttons */}
+                      {canManage && (
+                        <div style={{display:"flex",gap:5,flexShrink:0}}>
+                          <button className="ghost-btn" onClick={()=>onKill(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
+                            style={{fontSize:9.5,padding:"3px 8px",color:mode.color,borderColor:`${mode.color}40`}}>☠️ Kill</button>
+                          <button className="ghost-btn" onClick={()=>onReset(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
+                            style={{fontSize:9.5,padding:"3px 8px"}}>🔴 Live</button>
+                          <button className="ghost-btn" onClick={()=>onSetTimer(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
+                            style={{fontSize:9.5,padding:"3px 8px"}}>⏱</button>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -3011,9 +3027,15 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, k
                         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
                           {/* Boss image — 78x78, clickable to upload */}
                           <div className="boss-img-upload" onClick={()=>canManage&&onImage(b.id)}
-                            style={{width:46,height:46,borderRadius:10,background:b.color+"22",border:`2px solid ${b.color}44`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0,position:"relative",cursor:canManage?"pointer":"default"}}>
-                            {b.image ? <img src={b.image} alt={b.name} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span style={{fontSize:20}}>👹</span>}
-                            {canManage&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",fontSize:12}} className="boss-img-ov">📷</div>}
+                            style={{width:78,height:78,borderRadius:12,background:b.color+"18",border:`2px solid ${b.color}55`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0,position:"relative",cursor:canManage?"pointer":"default",boxShadow:`0 0 12px ${b.color}22`}}>
+                            {b.image
+                              ? <img src={b.image} alt={b.name} style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}}/>
+                              : <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2}}>
+                                  <span style={{fontSize:28}}>👹</span>
+                                  {canManage&&<span style={{fontSize:8,color:b.color,opacity:0.7,fontFamily:"'Exo 2',sans-serif",fontWeight:700}}>UPLOAD</span>}
+                                </div>
+                            }
+                            {canManage&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",fontSize:11,color:"#fff",fontFamily:"'Exo 2',sans-serif",fontWeight:700,flexDirection:"column",gap:2}} className="boss-img-ov">📷<span style={{fontSize:9}}>Change</span></div>}
                           </div>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:11.5,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>CH {b.channel}</div>
