@@ -973,9 +973,8 @@ export default function App() {
       showToast("⚠️ Image too large — using default icon","warn");
       safeImage = "🏺";
     }
-    // Only include columns that exist in Supabase — NO endTime (use end_time only)
+    // Only include columns that exist in Supabase — NO id (auto-generated), NO endTime
     const dbItem = {
-      id: String(Date.now()),
       name: auctionForm.name,
       rarity: auctionForm.rarity,
       minBid: parseInt(auctionForm.minBid)||500,
