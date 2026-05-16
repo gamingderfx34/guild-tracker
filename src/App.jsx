@@ -376,10 +376,12 @@ export default function App() {
 
   // ── Supabase real-time subscriptions ─────────────────────────────────────
   useEffect(()=>{
-    // Auction items real-time
+    // Auction items real-time — any change reloads both auction + members (for points)
     const auctionSub = supabase
       .channel("auction_items_rt")
-      .on("postgres_changes",{event:"*",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); })
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); loadMembers(); })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); })
       .subscribe();
 
     // Members real-time — so new registrations & role/points changes appear everywhere instantly
@@ -927,23 +929,28 @@ export default function App() {
     const file = e.target.files?.[0]; if(!file) return;
     setAuctionImgUploading(true);
     try {
-      const ext = file.name.split(".").pop();
-      const path = `auction/${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from("asset").upload(path, file, {cacheControl:"3600",upsert:false});
-      if(!error) {
-        const { data: urlData } = supabase.storage.from("asset").getPublicUrl(path);
-        setAuctionForm(p=>({...p,imageUrl:urlData.publicUrl,image:null}));
-        showToast("🖼️ Image uploaded!");
-      } else {
-        // fallback: local base64
-        const reader = new FileReader();
-        reader.onload = ev=>setAuctionForm(p=>({...p,imageUrl:ev.target.result,image:null}));
-        reader.readAsDataURL(file);
+      const ext = file.name.split(".").pop().toLowerCase();
+      // Unique path so every upload is fresh and visible to all users
+      const path = `auction/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("asset")
+        .upload(path, file, { cacheControl:"3600", upsert:true, contentType: file.type });
+      if(upErr) {
+        console.error("Image upload error:", upErr);
+        showToast(`❌ Image upload failed: ${upErr.message} — make sure the 'asset' bucket exists and is public.`, "error");
+        setAuctionImgUploading(false);
+        return;
       }
-    } catch {
-      const reader = new FileReader();
-      reader.onload = ev=>setAuctionForm(p=>({...p,imageUrl:ev.target.result,image:null}));
-      reader.readAsDataURL(file);
+      const { data: urlData } = supabase.storage.from("asset").getPublicUrl(path);
+      if(urlData?.publicUrl) {
+        // Cache-bust so all users see the fresh image
+        const freshUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+        setAuctionForm(p=>({...p, imageUrl:freshUrl, image:null}));
+        showToast("🖼️ Image uploaded & public!");
+      }
+    } catch(e) {
+      console.error("Image upload exception:", e);
+      showToast("❌ Image upload error — check Supabase storage bucket settings","error");
     }
     setAuctionImgUploading(false);
   };
@@ -951,30 +958,37 @@ export default function App() {
   const handleAddAuctionItem = async()=>{
     if(!auctionForm.name.trim()) { showToast("❌ Item name required","error"); return; }
     const endTime = Date.now() + (parseFloat(auctionForm.durationHours)||24)*3600000;
-    const item = {
-      id: String(Date.now()),
-      name: auctionForm.name,
-      rarity: auctionForm.rarity,
-      minBid: parseInt(auctionForm.minBid)||500,
-      currentBid: 0, highBidder: null,
-      bids: [],
-      locked: false, winner: null, claimed: false,
-      image: auctionForm.imageUrl || "🏺",
-      end_time: new Date(endTime).toISOString(),
-      endTime,
-      created_at: new Date().toISOString(),
+    // Don't include client-generated 'id' — let Supabase auto-generate it.
+    // Don't include local-only 'endTime' — only 'end_time' (ISO string) goes to DB.
+    const dbItem = {
+      name:        auctionForm.name.trim(),
+      rarity:      auctionForm.rarity,
+      minBid:      parseInt(auctionForm.minBid)||500,
+      currentBid:  0,
+      highBidder:  null,
+      bids:        JSON.stringify([]),
+      locked:      false,
+      winner:      null,
+      claimed:     false,
+      image:       auctionForm.imageUrl || "🏺",
+      end_time:    new Date(endTime).toISOString(),
     };
     try {
-      const dbItem = {...item, bids:JSON.stringify([]), endTime:undefined};
       const { error } = await supabase.from("auction_items").insert([dbItem]);
-      if(error) throw error;
+      if(error) {
+        console.error("Supabase auction insert error:", error);
+        showToast(`❌ Insert failed: ${error.message}`, "error");
+        return;
+      }
       await loadAuctionItems();
-    } catch {
-      setAuctionItems(prev=>[item,...prev]);
+      showToast(`✅ ${dbItem.name} added to auction!`);
+    } catch(e) {
+      console.error("Auction insert exception:", e);
+      showToast("❌ Failed to add auction item — check Supabase table & RLS settings","error");
+      return;
     }
     setShowAddAuction(false);
     setAuctionForm({name:"",rarity:"Epic",minBid:1000,durationHours:24,image:null,imageUrl:""});
-    showToast(`✅ ${item.name} added to auction!`);
   };
 
   const handleEditAuctionItem = async()=>{
@@ -1013,43 +1027,82 @@ export default function App() {
     if(amount <= bidModal.currentBid && bidModal.currentBid > 0) { showToast(`❌ Bid must exceed ${bidModal.currentBid.toLocaleString()} pts`,"error"); return; }
     if(amount < bidModal.minBid) { showToast(`❌ Minimum bid is ${bidModal.minBid.toLocaleString()} pts`,"error"); return; }
     if(amount > myPoints) { showToast(`❌ Not enough points! You have ${myPoints.toLocaleString()} pts`,"error"); return; }
+
     const myName = currentUser?.name||"Guest";
+    // Capture previous high bidder info BEFORE updating
+    const prevHighBidder = bidModal.highBidder;
+    const prevBidAmount  = bidModal.currentBid || 0;
+    const prevMember     = prevHighBidder ? members.find(m=>m.name===prevHighBidder) : null;
+
     const newBid = {bidder:myName, amount, time:new Date().toLocaleTimeString()};
     const updatedBids = [...(bidModal.bids||[]), newBid];
-    // Real-time update via Supabase
+
     try {
-      const { error } = await supabase.from("auction_items").update({
-        currentBid: amount,
-        highBidder: myName,
-        bids: JSON.stringify(updatedBids),
-      }).eq("id",bidModal.id);
-      if(!error) await loadAuctionItems();
-      else throw error;
-    } catch {
+      // 1) Deduct bid points from current bidder
+      const { error: deductErr } = await supabase.from("members")
+        .update({ points: myPoints - amount })
+        .eq("id", myMember.id);
+      if(deductErr) throw deductErr;
+
+      // 2) Refund previous high bidder (different person, non-zero bid)
+      if(prevMember && prevHighBidder !== myName && prevBidAmount > 0) {
+        const refundedPts = (prevMember.points || 0) + prevBidAmount;
+        await supabase.from("members")
+          .update({ points: refundedPts })
+          .eq("id", prevMember.id);
+      }
+
+      // 3) Update auction item in Supabase
+      const { error: bidErr } = await supabase.from("auction_items").update({
+        currentBid:  amount,
+        highBidder:  myName,
+        bids:        JSON.stringify(updatedBids),
+      }).eq("id", bidModal.id);
+      if(bidErr) throw bidErr;
+
+      // Refresh both collections so UI is consistent everywhere
+      await loadAuctionItems();
+      await loadMembers();
+
+    } catch(err) {
+      console.error("Bid error:", err);
+      // Optimistic local fallback so the current user sees feedback
       setAuctionItems(prev=>prev.map(item=>{
         if(item.id!==bidModal.id) return item;
         return {...item, currentBid:amount, highBidder:myName, bids:updatedBids};
       }));
+      setMembers(prev=>prev.map(m=>{
+        if(m.name===myName)           return {...m, points:(m.points||0)-amount};
+        if(m.name===prevHighBidder)   return {...m, points:(m.points||0)+prevBidAmount};
+        return m;
+      }));
+      showToast("⚠️ Bid saved locally — Supabase sync failed. Check table permissions.","warn");
     }
+
     setBidModal(null); setBidAmount("");
     showToast(`🏺 Bid of ${amount.toLocaleString()} pts placed on ${bidModal.name}!`);
   };
 
   const handleAnnounceWinner = async(item)=>{
     const w = {
-      id: String(Date.now()),
       itemName: item.name, winner: item.highBidder, points: item.currentBid,
       date: new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}),
       claimed: false, rarity: item.rarity, image: item.image,
       created_at: new Date().toISOString(),
     };
     try {
-      await supabase.from("winners").insert([w]);
-      await supabase.from("auction_items").update({locked:true,winner:item.highBidder}).eq("id",item.id);
+      const { error: wErr } = await supabase.from("winners").insert([w]);
+      if(wErr) throw wErr;
+      const { error: lErr } = await supabase.from("auction_items")
+        .update({locked:true, winner:item.highBidder})
+        .eq("id",item.id);
+      if(lErr) throw lErr;
       await loadAuctionItems();
-      // Real-time sub handles loadWinners()
-    } catch {
-      setWinners(prev=>[...prev,w]);
+      await loadWinners();
+      await loadMembers();
+    } catch(e) {
+      console.error("Announce winner error:", e);
+      setWinners(prev=>[...prev, {...w, id:String(Date.now())}]);
       setAuctionItems(prev=>prev.map(i=>i.id===item.id?{...i,locked:true,winner:item.highBidder}:i));
     }
     if(discordConnected) showToast("📢 Discord notified: Winner announced!","info");
@@ -2120,12 +2173,19 @@ export default function App() {
                     const file=ev.target.files?.[0];if(!file)return;
                     setAuctionImgUploading(true);
                     try {
-                      const ext=file.name.split(".").pop();
-                      const path=`auction/${Date.now()}.${ext}`;
-                      const {error}=await supabase.storage.from("asset").upload(path,file,{cacheControl:"3600",upsert:false});
-                      if(!error){const {data:ud}=supabase.storage.from("asset").getPublicUrl(path);setEditAuction(p=>({...p,image:ud.publicUrl}));}
-                      else {const r=new FileReader();r.onload=ev2=>setEditAuction(p=>({...p,image:ev2.target.result}));r.readAsDataURL(file);}
-                    } catch {const r=new FileReader();r.onload=ev2=>setEditAuction(p=>({...p,image:ev2.target.result}));r.readAsDataURL(file);}
+                      const ext=file.name.split(".").pop().toLowerCase();
+                      const path=`auction/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+                      const {error:upErr}=await supabase.storage.from("asset").upload(path,file,{cacheControl:"3600",upsert:true,contentType:file.type});
+                      if(!upErr){
+                        const {data:ud}=supabase.storage.from("asset").getPublicUrl(path);
+                        const freshUrl=`${ud.publicUrl}?t=${Date.now()}`;
+                        setEditAuction(p=>({...p,image:freshUrl}));
+                        showToast("🖼️ Image uploaded & public!");
+                      } else {
+                        console.error("Edit image upload error:",upErr);
+                        showToast(`❌ Upload failed: ${upErr.message}`,"error");
+                      }
+                    } catch(e){console.error("Edit image exception:",e);showToast("❌ Image upload error","error");}
                     setAuctionImgUploading(false);
                   };inp.click();
                 }} disabled={auctionImgUploading}
