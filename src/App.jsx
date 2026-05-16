@@ -925,23 +925,22 @@ export default function App() {
   const handleAuctionImageUpload = async(e)=>{
     const file = e.target.files?.[0]; if(!file) return;
     setAuctionImgUploading(true);
-
-    // Step 1: Try Supabase Storage first (best option — stores URL not raw data)
+    // Use the existing public 'auction-images' bucket
     try {
       const ext = file.name.split(".").pop();
-      const path = `auction/${Date.now()}.${ext}`;
+      const path = `auction-${Date.now()}.${ext}`;
       const { error } = await supabase.storage.from("auction-images").upload(path, file, {cacheControl:"3600",upsert:false});
       if(!error) {
         const { data: urlData } = supabase.storage.from("auction-images").getPublicUrl(path);
         setAuctionForm(p=>({...p,imageUrl:urlData.publicUrl,image:null}));
-        showToast("🖼️ Image uploaded!");
+        showToast("🖼️ Image uploaded to storage!");
         setAuctionImgUploading(false);
         return;
       }
-    } catch {}
+      console.warn("Storage upload error:", error.message);
+    } catch(err) { console.warn("Storage exception:", err); }
 
-    // Step 2: Fallback — compress image to small thumbnail (max 80x80, JPEG quality 0.6)
-    // This keeps base64 under ~8KB which is safe for Supabase TEXT column
+    // Fallback: compress to small thumbnail so it fits in DB text column
     try {
       const img = new Image();
       const objectUrl = URL.createObjectURL(file);
@@ -955,14 +954,13 @@ export default function App() {
         const compressed = canvas.toDataURL("image/jpeg", 0.6);
         setAuctionForm(p=>({...p,imageUrl:compressed,image:null}));
         URL.revokeObjectURL(objectUrl);
-        showToast("🖼️ Image ready (compressed)");
+        showToast("🖼️ Image ready (compressed fallback)");
         setAuctionImgUploading(false);
       };
       img.onerror = ()=>{ setAuctionImgUploading(false); showToast("❌ Image load failed","error"); };
       img.src = objectUrl;
       return;
     } catch {}
-
     setAuctionImgUploading(false);
     showToast("❌ Image upload failed","error");
   };
@@ -970,37 +968,38 @@ export default function App() {
   const handleAddAuctionItem = async()=>{
     if(!auctionForm.name.trim()) { showToast("❌ Item name required","error"); return; }
     const endTime = Date.now() + (parseFloat(auctionForm.durationHours)||24)*3600000;
-    // Safety: if imageUrl is a huge base64 (>50KB), strip it and use emoji fallback
     let safeImage = auctionForm.imageUrl || "🏺";
     if(safeImage.startsWith("data:") && safeImage.length > 50000) {
-      showToast("⚠️ Image too large — using default icon. Use Supabase Storage for real images.","warn");
+      showToast("⚠️ Image too large — using default icon","warn");
       safeImage = "🏺";
     }
-    const item = {
+    // Only include columns that exist in Supabase — NO endTime (use end_time only)
+    const dbItem = {
       id: String(Date.now()),
       name: auctionForm.name,
       rarity: auctionForm.rarity,
       minBid: parseInt(auctionForm.minBid)||500,
-      currentBid: 0, highBidder: null,
-      bids: [],
-      locked: false, winner: null, claimed: false,
+      currentBid: 0,
+      highBidder: null,
+      bids: JSON.stringify([]),
+      locked: false,
+      winner: null,
+      claimed: false,
       image: safeImage,
       end_time: new Date(endTime).toISOString(),
-      endTime,
       created_at: new Date().toISOString(),
     };
     try {
-      const dbItem = {...item, bids:JSON.stringify([]), endTime:undefined};
       const { error } = await supabase.from("auction_items").insert([dbItem]);
       if(error) {
         console.error("Supabase insert error:", error);
         showToast(`❌ Save failed: ${error.message}`,"error");
-        return; // Don't close modal — let admin see the error
+        return;
       }
       await loadAuctionItems();
       setShowAddAuction(false);
       setAuctionForm({name:"",rarity:"Epic",minBid:1000,durationHours:24,image:null,imageUrl:""});
-      showToast(`✅ ${item.name} added to auction!`);
+      showToast(`✅ ${auctionForm.name} added to auction!`);
     } catch(err) {
       console.error("Auction insert exception:", err);
       showToast("❌ Could not save to database — check console","error");
