@@ -123,10 +123,12 @@ const EVENT_TYPES = [
 
 // ── Field Boss schedule (from game) ─────────────────────────────────────────
 const FIELD_BOSS_SCHEDULE = [
-  { name:"Twilight Overlord Rogvalt", map:"Canyon of the World Tree Depth", days:["Sunday","Wednesday","Saturday"], time:"21:00" },
-  { name:"Nargrim",                   map:"Vale of Ragnarok",                days:["Monday","Saturday"],            time:"21:05" },
-  { name:"Faded Oath Vargreif",       map:"Crossroads of Ragnarok",          days:["Wednesday","Friday"],           time:"21:10" },
-  { name:"Twilight Disaster Nirva",   map:"(Inter-Server) Folkvang 5F",      days:["Sunday","Monday","Friday"],     time:"21:15" },
+  { name:"Twilight Overlord Rogvalt", map:"Canyon of the World Tree Depth",  days:["Sunday","Wednesday","Saturday"],         time:"21:00", interserver:false },
+  { name:"Nargrim",                   map:"Vale of Ragnarok",                 days:["Monday","Saturday"],                     time:"21:05", interserver:false },
+  { name:"Faded Oath Vargreif",       map:"Crossroads of Ragnarok",           days:["Wednesday","Friday"],                    time:"21:10", interserver:false },
+  { name:"Twilight Disaster Nirva",   map:"(Inter-Server) Folkvang 5F",       days:["Sunday","Monday","Friday"],              time:"21:15", interserver:true  },
+  { name:"Forgotten Holy Temple Boss",map:"Forgotten Holy Temple",            days:["Sunday","Tuesday","Thursday","Saturday"],time:"21:20", interserver:false },
+  { name:"Sindri Island Battle",      map:"Sindri Island",                    days:["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"], time:"All Day", interserver:true, allDay:true },
 ];
 
 const NAV = [
@@ -1438,8 +1440,8 @@ export default function App() {
               ))}
             </div>
 
-            {/* ── NIDAVELLIR REGIONS MAP ── */}
-            <OverworldMapsPanel canManage={canManage} />
+            {/* ── BOSS APPEARANCE SCHEDULE ── */}
+            <BossSchedulePanel />
 
             <div style={{background:"linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.07)",borderRadius:20,overflow:"hidden"}}>
               <div style={{padding:"16px 22px 12px",borderBottom:"1px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -1490,23 +1492,6 @@ export default function App() {
                 onSetTimer={(id,group)=>{setBossTimerModal({id,group});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
                 onImage={(id,group)=>{setBossImageModal({id,group});bossImgRef.current?.click();}}
               />
-
-              {/* Field Boss Schedule */}
-              <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:"18px 20px",marginBottom:22}}>
-                <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:"#f87171",marginBottom:12,letterSpacing:"0.04em"}}>👹 Field Boss Schedule (UTC+8)</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
-                  {FIELD_BOSS_SCHEDULE.map((b,i)=>{
-                    const isToday = b.days.includes(getDayName());
-                    return(
-                      <div key={i} style={{background:isToday?"rgba(248,113,113,0.08)":"rgba(255,255,255,0.02)",border:`1px solid ${isToday?"rgba(248,113,113,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:11,padding:"12px 14px"}}>
-                        <div style={{fontSize:12.5,fontWeight:700,color:isToday?"#f87171":"#e2e8f0"}}>{b.name}{isToday&&<span style={{marginLeft:8,fontSize:10,background:"rgba(248,113,113,0.2)",color:"#f87171",padding:"1px 6px",borderRadius:4}}>TODAY</span>}</div>
-                        <div style={{fontSize:10.5,color:"#3d5070",marginTop:3}}>{b.map}</div>
-                        <div style={{fontSize:11,color:"#60a5fa",marginTop:4}}>{b.days.join(", ")} · {b.time}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
 
               {/* ── MYRKRHEIM BOSSES ── */}
               <BossGroupPanel
@@ -2736,6 +2721,180 @@ function MapTypeBadge({ type }) {
   const s = MAP_TYPE_BADGE[type] || MAP_TYPE_BADGE["Open World"];
   return (
     <span style={{display:"inline-flex",alignItems:"center",padding:"3px 9px",borderRadius:6,background:s.bg,color:s.color,border:`1px solid ${s.border}`,fontSize:10,fontWeight:700,letterSpacing:"0.06em"}}>{type}</span>
+  );
+}
+
+// ── Boss Appearance Schedule Panel (collapsible, animated) ─────────────────
+function BossSchedulePanel() {
+  const [collapsed, setCollapsed] = React.useState(false);
+  const [now, setNow] = React.useState(new Date());
+
+  React.useEffect(()=>{
+    const t = setInterval(()=>setNow(new Date()), 60000);
+    return ()=>clearInterval(t);
+  },[]);
+
+  const dayName = now.toLocaleDateString("en-US",{weekday:"long"});
+  const timeStr = now.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",hour12:false,timeZone:"Asia/Manila"});
+
+  // Days ordered for the header
+  const DAY_SHORT = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const DAY_FULL  = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+  const todayIdx  = DAY_FULL.indexOf(dayName);
+
+  return (
+    <div style={{
+      background:"rgba(255,255,255,0.02)",
+      border:"1px solid rgba(245,158,11,0.3)",
+      borderRadius:18,
+      overflow:"hidden",
+      marginBottom:22,
+      boxShadow:"0 0 40px rgba(245,158,11,0.05)",
+      transition:"all 0.35s cubic-bezier(0.4,0,0.2,1)",
+    }}>
+      {/* Header — click to collapse */}
+      <div
+        onClick={()=>setCollapsed(p=>!p)}
+        style={{
+          display:"flex",alignItems:"center",justifyContent:"space-between",
+          padding:"14px 20px",
+          background:"rgba(245,158,11,0.06)",
+          borderBottom: collapsed ? "none" : "1px solid rgba(245,158,11,0.15)",
+          cursor:"pointer",
+          userSelect:"none",
+        }}
+      >
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:38,height:38,borderRadius:10,background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.35)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,flexShrink:0}}>👹</div>
+          <div>
+            <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:"#fbbf24",letterSpacing:"0.06em"}}>BOSS APPEARANCE SCHEDULE</div>
+            <div style={{fontSize:10.5,color:"#3d5070",marginTop:1}}>Field Boss & Sindri Island · UTC+8 Regional Time</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+          <span style={{fontSize:10.5,color:"#fbbf24",background:"rgba(245,158,11,0.1)",border:"1px solid rgba(245,158,11,0.25)",padding:"3px 10px",borderRadius:6,fontWeight:700,fontFamily:"'Exo 2',sans-serif"}}>
+            {dayName.toUpperCase().slice(0,3)} · {timeStr}
+          </span>
+          <span style={{
+            color:"#fbbf24",fontSize:13,
+            display:"inline-block",
+            transform: collapsed ? "rotate(0deg)" : "rotate(180deg)",
+            transition:"transform 0.3s cubic-bezier(0.4,0,0.2,1)",
+          }}>▾</span>
+        </div>
+      </div>
+
+      {/* Body — animated collapse */}
+      <div style={{
+        maxHeight: collapsed ? 0 : 600,
+        overflow:"hidden",
+        transition:"max-height 0.4s cubic-bezier(0.4,0,0.2,1)",
+      }}>
+        <div style={{padding:"16px 20px"}}>
+          {/* Day header row */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr repeat(7,1fr)",gap:4,marginBottom:8,alignItems:"center"}}>
+            <div style={{fontSize:9.5,color:"#3d5070",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",gridColumn:"1/4"}}>Boss · Map</div>
+            {DAY_SHORT.map((d,i)=>(
+              <div key={d} style={{
+                textAlign:"center",fontSize:9.5,fontWeight:700,letterSpacing:"0.05em",
+                color: i===todayIdx ? "#fbbf24" : "#3d5070",
+                background: i===todayIdx ? "rgba(245,158,11,0.12)" : "transparent",
+                borderRadius:5, padding:"3px 0",
+              }}>{d}</div>
+            ))}
+          </div>
+
+          {/* Boss rows */}
+          {FIELD_BOSS_SCHEDULE.map((b,idx)=>{
+            const isToday = b.days.includes(dayName);
+            const isSindri = !!b.allDay;
+            return (
+              <div key={idx} style={{
+                display:"grid",
+                gridTemplateColumns:"1fr 1fr 1fr repeat(7,1fr)",
+                gap:4,
+                alignItems:"center",
+                padding:"8px 10px",
+                borderRadius:10,
+                marginBottom:5,
+                background: isSindri
+                  ? "rgba(99,102,241,0.08)"
+                  : isToday
+                    ? "rgba(245,158,11,0.08)"
+                    : "rgba(255,255,255,0.02)",
+                border: isSindri
+                  ? "1px solid rgba(99,102,241,0.25)"
+                  : isToday
+                    ? "1px solid rgba(245,158,11,0.25)"
+                    : "1px solid rgba(255,255,255,0.04)",
+                transition:"all 0.2s",
+              }}>
+                {/* Boss name */}
+                <div style={{gridColumn:"1/2"}}>
+                  <div style={{fontSize:11.5,fontWeight:700,color: isSindri ? "#a5b4fc" : isToday ? "#fbbf24" : "#e2e8f0",letterSpacing:"0.02em",lineHeight:1.3}}>
+                    {b.name}
+                    {isToday && !isSindri && <span style={{marginLeft:6,fontSize:8.5,background:"rgba(245,158,11,0.2)",color:"#fbbf24",padding:"1px 5px",borderRadius:3,verticalAlign:"middle",fontFamily:"'Exo 2',sans-serif",fontWeight:700}}>TODAY</span>}
+                    {isSindri && <span style={{marginLeft:6,fontSize:8.5,background:"rgba(99,102,241,0.2)",color:"#a5b4fc",padding:"1px 5px",borderRadius:3,verticalAlign:"middle",fontFamily:"'Exo 2',sans-serif",fontWeight:700}}>DAILY</span>}
+                  </div>
+                </div>
+                {/* Map */}
+                <div style={{gridColumn:"2/3",fontSize:9.5,color:"#3d5070",paddingLeft:4}}>
+                  {b.map}
+                  {b.interserver && <span style={{display:"block",fontSize:8.5,color:"#f87171",fontWeight:700,marginTop:1}}>INTER-SERVER</span>}
+                </div>
+                {/* Time */}
+                <div style={{gridColumn:"3/4",fontSize:11,fontWeight:700,color: isSindri ? "#a5b4fc" : "#60a5fa",fontFamily:"'Rajdhani',sans-serif",paddingLeft:4}}>
+                  {b.time}
+                </div>
+                {/* Day dots */}
+                {DAY_FULL.map((d,i)=>{
+                  const active = b.days.includes(d);
+                  const isNow  = i === todayIdx && active;
+                  return (
+                    <div key={d} style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
+                      {isSindri ? (
+                        <span style={{fontSize:10,color:"#a5b4fc"}}>✦</span>
+                      ) : active ? (
+                        <div style={{
+                          width: isNow ? 10 : 8,
+                          height: isNow ? 10 : 8,
+                          borderRadius:"50%",
+                          background: isNow ? "#fbbf24" : "#475569",
+                          boxShadow: isNow ? "0 0 8px #fbbf24" : "none",
+                          transition:"all 0.2s",
+                        }} />
+                      ) : (
+                        <div style={{width:5,height:5,borderRadius:"50%",background:"rgba(255,255,255,0.06)"}} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+
+          {/* Legend */}
+          <div style={{display:"flex",gap:16,marginTop:12,flexWrap:"wrap"}}>
+            {[
+              {dot:"#fbbf24",glow:true,label:"Today's bosses"},
+              {dot:"#475569",glow:false,label:"Scheduled day"},
+              {dot:"rgba(255,255,255,0.06)",glow:false,label:"Not scheduled"},
+              {color:"#a5b4fc",label:"Sindri — runs all day every day"},
+            ].map((l,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"#3d5070"}}>
+                {l.dot && <div style={{width:7,height:7,borderRadius:"50%",background:l.dot,boxShadow:l.glow?`0 0 6px ${l.dot}`:"none",flexShrink:0}} />}
+                {l.color && <span style={{color:l.color,fontSize:11}}>✦</span>}
+                {l.label}
+              </div>
+            ))}
+          </div>
+
+          <div style={{marginTop:10,fontSize:10,color:"#2d3a52",lineHeight:1.7,borderTop:"1px solid rgba(255,255,255,0.04)",paddingTop:10}}>
+            ⚠️ Bosses appear once per day. Respawn times reset daily at 12:00 AM UTC+8. Conquerors may adjust respawn once per week (resets Tuesday 5 AM UTC+8). No changes allowed 10:30 PM – 11:59 PM.
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
