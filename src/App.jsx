@@ -24,26 +24,14 @@ const MOCK_LOGO = "https://mbalsusqtkbtoxuawjau.supabase.co/storage/v1/object/pu
 function makeBossId() { return Date.now() + Math.random(); }
 
 const DEFAULT_LIVE4 = [
-  { id:"l1a", name:"Lv.66 Cruel Outlaw Gand",  secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#f59e0b", image:null, group:"live4" },
-  { id:"l1b", name:"Lv.66 Cruel Outlaw Gand",  secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#f59e0b", image:null, group:"live4" },
-  { id:"l2a", name:"Lv.67 Gatekeeper Amot",    secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#60a5fa", image:null, group:"live4" },
-  { id:"l2b", name:"Lv.67 Gatekeeper Amot",    secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#60a5fa", image:null, group:"live4" },
-  { id:"l3a", name:"Lv.68 Destroyer Hawler",   secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#34d399", image:null, group:"live4" },
-  { id:"l3b", name:"Lv.68 Destroyer Hawler",   secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#34d399", image:null, group:"live4" },
-  { id:"l4a", name:"Lv.69 Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#a78bfa", image:null, group:"live4" },
-  { id:"l4b", name:"Lv.69 Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#a78bfa", image:null, group:"live4" },
-];
-
-// Myrkrheim bosses — same 4 bosses, different group
-const DEFAULT_MYRKRHEIM = [
-  { id:"m1a", name:"Lv.66 Tre Sol Invading Captain",          secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#f59e0b", image:null, group:"myrkrheim" },
-  { id:"m1b", name:"Lv.66 Tre Sol Invading Captain",          secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#f59e0b", image:null, group:"myrkrheim" },
-  { id:"m2a", name:"Lv.67 Elder Troll Invading Captain",      secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#60a5fa", image:null, group:"myrkrheim" },
-  { id:"m2b", name:"Lv.67 Elder Troll Invading Captain",      secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#60a5fa", image:null, group:"myrkrheim" },
-  { id:"m3a", name:"Lv.68 Villainous Jotunn Combat Captain",  secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#34d399", image:null, group:"myrkrheim" },
-  { id:"m3b", name:"Lv.68 Villainous Jotunn Combat Captain",  secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#34d399", image:null, group:"myrkrheim" },
-  { id:"m4a", name:"Lv.68 Ferocious Fire Jotunn Fight Captain",secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#f97316", image:null, group:"myrkrheim" },
-  { id:"m4b", name:"Lv.68 Ferocious Fire Jotunn Fight Captain",secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#f97316", image:null, group:"myrkrheim" },
+  { id:"l1a", name:"Cruel Outlaw Gand",  secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#f59e0b", image:null, group:"live4" },
+  { id:"l1b", name:"Cruel Outlaw Gand",  secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#f59e0b", image:null, group:"live4" },
+  { id:"l2a", name:"Gatekeeper Amot",    secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#60a5fa", image:null, group:"live4" },
+  { id:"l2b", name:"Gatekeeper Amot",    secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#60a5fa", image:null, group:"live4" },
+  { id:"l3a", name:"Destroyer Hawler",   secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#34d399", image:null, group:"live4" },
+  { id:"l3b", name:"Destroyer Hawler",   secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#34d399", image:null, group:"live4" },
+  { id:"l4a", name:"Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#a78bfa", image:null, group:"live4" },
+  { id:"l4b", name:"Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#a78bfa", image:null, group:"live4" },
 ];
 
 // FOLKVANG floors: 1F-5F, Normal + Interserver
@@ -56,7 +44,7 @@ function mkFolkvang(type, color) {
   }));
 }
 const DEFAULT_FOLKVANG_NORMAL = mkFolkvang("normal","#f97316");
-const DEFAULT_FOLKVANG_INTERSERVER = mkFolkvang("interserver","#f87171");
+const DEFAULT_FOLKVANG_INTERSERVER = mkFolkvang("interserver","#e879f9");
 
 // Canyon of Nidavellir — 3 bosses, interserver, 3 channels default
 const CANYON_BOSSES_DEF = [
@@ -88,21 +76,6 @@ function mkLindwurm() {
 }
 const DEFAULT_LINDWURM = mkLindwurm();
 
-// Hilder's Labyrinth — 3 bosses, 2 channels default, Lv.70-80 required, Inter-Server
-const HILDERS_BOSSES_DEF = [
-  { id:"hl1", name:"Lv.71 Ancient Labyrinth Warden",   color:"#a78bfa" },
-  { id:"hl2", name:"Lv.74 Twisted Maze Overlord",      color:"#c084fc" },
-  { id:"hl3", name:"Lv.77 Hilder's Champion Guardian", color:"#e879f9" },
-];
-function mkHilders() {
-  let arr=[];
-  HILDERS_BOSSES_DEF.forEach(b=>{
-    [1,2].forEach(ch=>arr.push({...b,id:`${b.id}_ch${ch}`,secs:0,elapsed:0,respawnSecs:6300,channel:ch,image:null,group:"hilders"}));
-  });
-  return arr;
-}
-const DEFAULT_HILDERS = mkHilders();
-
 const DEFAULT_BOSSES = [...DEFAULT_LIVE4];
 
 const INIT_AUCTION_ITEMS = [
@@ -115,10 +88,10 @@ const INIT_AUCTION_ITEMS = [
 // ── Event types with default points ─────────────────────────────────────────
 const EVENT_TYPES = [
   { id:"sindri",    label:"Sindri Battle",    icon:"⚔️",  defaultPoints:10, color:"#f59e0b" },
-  { id:"server",    label:"Server Battle",    icon:"🌐",  defaultPoints:3,  color:"#60a5fa" },
-  { id:"fieldboss", label:"Field Boss",       icon:"👹",  defaultPoints:1,  color:"#f87171" },
-  { id:"sanctuary", label:"Guild Sanctuary",  icon:"🏛️",  defaultPoints:3,  color:"#34d399" },
-  { id:"ymir",      label:"Ymir Cup",         icon:"🏆",  defaultPoints:0,  color:"#a78bfa", adminOnly:true },
+  { id:"server",    label:"Server Battle",    icon:"🌐",  defaultPoints:5,  color:"#60a5fa" },
+  { id:"fieldboss", label:"Field Boss",       icon:"👹",  defaultPoints:5,  color:"#f87171" },
+  { id:"sanctuary", label:"Guild Sanctuary",  icon:"🏛️",  defaultPoints:5,  color:"#34d399" },
+  { id:"ymir",      label:"Ymir Cup",         icon:"🏆",  defaultPoints:5,  color:"#a78bfa" },
 ];
 
 // ── Field Boss schedule (from game) ─────────────────────────────────────────
@@ -227,20 +200,18 @@ export default function App() {
   const [uploadMsg, setUploadMsg]     = useState("");
   const [members, setMembers]         = useState([]);
   const [bosses, setBosses]           = useState(()=>lsGet("rampageBosses", DEFAULT_BOSSES));
-  const [myrkrheimBosses, setMyrkrheimBosses]       = useState(()=>lsGet("rampageMyrkrheim", DEFAULT_MYRKRHEIM));
   const [folkvangNormal, setFolkvangNormal]         = useState(()=>lsGet("rampageFolkvangN", DEFAULT_FOLKVANG_NORMAL));
   const [folkvangInterserver, setFolkvangInterserver] = useState(()=>lsGet("rampageFolkvangI", DEFAULT_FOLKVANG_INTERSERVER));
   const [canyonBosses, setCanyonBosses]             = useState(()=>lsGet("rampageCanyon", DEFAULT_CANYON));
   const [lindwurmBosses, setLindwurmBosses]         = useState(()=>lsGet("rampageLindwurm", DEFAULT_LINDWURM));
-  const [hildersBosses, setHildersBosses]           = useState(()=>lsGet("rampageHilders", DEFAULT_HILDERS));
   const [bossTimerModal, setBossTimerModal]         = useState(null); // {id, group}
   const [timerHH, setTimerHH]   = useState("0");
   const [timerMM, setTimerMM]   = useState("0");
   const [timerSS, setTimerSS]   = useState("0");
   const [addChannelModal, setAddChannelModal]       = useState(null); // group name
   const [attendance, setAttendance]   = useState([]);
-  const [auctionItems, setAuctionItems] = useState([]);
-  const [winners, setWinners]         = useState([]);
+  const [auctionItems, setAuctionItems] = useState(()=>lsGet("rampageAuction", INIT_AUCTION_ITEMS));
+  const [winners, setWinners]         = useState(()=>lsGet("rampageWinners", []));
   const [search, setSearch]           = useState("");
   const [killFlash, setKillFlash]     = useState(null);
   const [showAddMember, setShowAddMember] = useState(false);
@@ -266,24 +237,11 @@ export default function App() {
   const [bossImageModal, setBossImageModal] = useState(null);
 
   // ── Events & Attendance ──────────────────────────────────────────────────
-  const [events, setEvents]           = useState([]);
+  const [events, setEvents]           = useState(()=>lsGet("rampageEvents",[]));
   const [showCreateEvent, setShowCreateEvent] = useState(false);
   const [eventForm, setEventForm]     = useState({ type:"sindri", name:"", date:today, notes:"", server:"", points:10 });
   const [markEventId, setMarkEventId] = useState(null); // event being marked for attendance
-  const [eventPoints, setEventPoints] = useState(()=>{
-    const saved = lsGet("rampageEventPoints", {});
-    // Merge saved with defaults so new event types always have a value
-    const merged = {};
-    EVENT_TYPES.forEach(et=>{ merged[et.id] = saved[et.id] ?? et.defaultPoints; });
-    return merged;
-  });
-  // Attendance code security system — admin generates a code per event, members must enter it
-  const [eventAttCodes, setEventAttCodes] = useState(()=>lsGet("rampageAttCodes",{})); // {eventId: code}
-  const [showAttCodeModal, setShowAttCodeModal] = useState(null); // eventId for admin generating code
-  const [attCodeInput, setAttCodeInput] = useState(""); // member enters code
-  const [showMemberAttModal, setShowMemberAttModal] = useState(null); // {eventId, event}
-  const [generatedCode, setGeneratedCode] = useState(""); // shown to admin after generation
-  const [ymirPointsModal, setYmirPointsModal] = useState(null); // eventId for admin to assign Ymir points
+  const [eventPoints, setEventPoints] = useState({}); // editable per-event-type points
 
   const fileRef    = useRef(null);
   const bossImgRef = useRef(null);
@@ -292,14 +250,13 @@ export default function App() {
   // ── Persist to localStorage ──────────────────────────────────────────────
   useEffect(()=>{ lsSet("rampageActiveNav", activeNav); }, [activeNav]);
   useEffect(()=>{ lsSet("rampageBosses", bosses); }, [bosses]);
-  useEffect(()=>{ lsSet("rampageMyrkrheim", myrkrheimBosses); }, [myrkrheimBosses]);
   useEffect(()=>{ lsSet("rampageFolkvangN", folkvangNormal); }, [folkvangNormal]);
   useEffect(()=>{ lsSet("rampageFolkvangI", folkvangInterserver); }, [folkvangInterserver]);
   useEffect(()=>{ lsSet("rampageCanyon", canyonBosses); }, [canyonBosses]);
   useEffect(()=>{ lsSet("rampageLindwurm", lindwurmBosses); }, [lindwurmBosses]);
-  useEffect(()=>{ lsSet("rampageHilders", hildersBosses); }, [hildersBosses]);
-  useEffect(()=>{ lsSet("rampageEventPoints", eventPoints); }, [eventPoints]);
-  useEffect(()=>{ lsSet("rampageAttCodes", eventAttCodes); }, [eventAttCodes]);
+  useEffect(()=>{ lsSet("rampageAuction", auctionItems); }, [auctionItems]);
+  useEffect(()=>{ lsSet("rampageWinners", winners); }, [winners]);
+  useEffect(()=>{ lsSet("rampageEvents", events); }, [events]);
 
   // ── Sync boss timer with real time on load ────────────────────────────────
   useEffect(()=>{
@@ -320,12 +277,10 @@ export default function App() {
         return {...b, secs:0, elapsed:(b.elapsed||0)+1};
       };
       setBosses(prev=>prev.map(tickBoss));
-      setMyrkrheimBosses(prev=>prev.map(tickBoss));
       setFolkvangNormal(prev=>prev.map(tickBoss));
       setFolkvangInterserver(prev=>prev.map(tickBoss));
       setCanyonBosses(prev=>prev.map(tickBoss));
       setLindwurmBosses(prev=>prev.map(tickBoss));
-      setHildersBosses(prev=>prev.map(tickBoss));
       setNow(Date.now());
       lsSet("rampageBossTimestamp", Date.now());
     },1000);
@@ -364,68 +319,29 @@ export default function App() {
     return () => { mounted=false; subscription.unsubscribe(); };
   },[]);
 
-  // ── Load data from Supabase on mount ─────────────────────────────────────
-  useEffect(()=>{
-    localStorage.removeItem("rampageAuction"); // clear stale cache
-    loadMembers();
-    loadAuctionItems();
-    loadEvents();
-    loadWinners();
-  },[]);
+  // ── Load members from Supabase ────────────────────────────────────────────
+  useEffect(()=>{ loadMembers(); },[]);
+  useEffect(()=>{ loadAuctionItems(); },[]);
 
   // ── Supabase real-time subscriptions ─────────────────────────────────────
   useEffect(()=>{
+    // Auction items real-time
     const auctionSub = supabase
       .channel("auction_items_rt")
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); })
-      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"auction_items"},(payload)=>{
-        const u = payload.new;
-        setAuctionItems(prev=>prev.map(item=>{
-          if(String(item.id)!==String(u.id)) return item;
-          return {
-            ...item,
-            currentBid:  u.currentBid  ?? item.currentBid,
-            highBidder:  u.highBidder  ?? item.highBidder,
-            bids:        typeof u.bids==="string" ? JSON.parse(u.bids||"[]") : (u.bids||item.bids),
-            locked:      u.locked      ?? item.locked,
-            winner:      u.winner      ?? item.winner,
-            claimed:     u.claimed     ?? item.claimed,
-            image:       u.image       || item.image,
-          };
-        }));
-      })
-      .on("postgres_changes",{event:"DELETE",schema:"public",table:"auction_items"},(payload)=>{
-        setAuctionItems(prev=>prev.filter(item=>String(item.id)!==String(payload.old.id)));
-      })
+      .on("postgres_changes",{event:"*",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); })
       .subscribe();
 
+    // Members real-time — so new registrations & role/points changes appear everywhere instantly
     const membersSub = supabase
       .channel("members_rt")
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"members"},()=>{ loadMembers(); })
-      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"members"},(payload)=>{
-        const u = payload.new;
-        setMembers(prev=>prev.map(m=>String(m.id)===String(u.id)?{...m,...u}:m));
-      })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"members"},()=>{ loadMembers(); })
       .on("postgres_changes",{event:"DELETE",schema:"public",table:"members"},()=>{ loadMembers(); })
-      .subscribe();
-
-    const eventsSub = supabase
-      .channel("events_rt")
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},()=>{ loadEvents(); })
-      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"events"},()=>{ loadEvents(); })
-      .on("postgres_changes",{event:"DELETE",schema:"public",table:"events"},()=>{ loadEvents(); })
-      .subscribe();
-
-    const winnersSub = supabase
-      .channel("winners_rt")
-      .on("postgres_changes",{event:"*",schema:"public",table:"winners"},()=>{ loadWinners(); })
       .subscribe();
 
     return ()=>{
       supabase.removeChannel(auctionSub);
       supabase.removeChannel(membersSub);
-      supabase.removeChannel(eventsSub);
-      supabase.removeChannel(winnersSub);
     };
   },[]);
 
@@ -446,7 +362,7 @@ export default function App() {
   const loadAuctionItems = async()=>{
     try {
       const { data, error } = await supabase.from("auction_items").select("*").order("created_at",{ascending:false});
-      if (!error && data) {
+      if (!error && data && data.length > 0) {
         setAuctionItems(data.map(i=>({
           ...i,
           bids: typeof i.bids === "string" ? JSON.parse(i.bids) : (i.bids||[]),
@@ -454,44 +370,6 @@ export default function App() {
         })));
       }
     } catch {}
-  };
-
-  const loadEvents = async()=>{
-    try {
-      const { data, error } = await supabase.from("events").select("*").order("created_at",{ascending:false});
-      if (!error && data) {
-        setEvents(data.map(ev=>({
-          ...ev,
-          attendance: typeof ev.attendance === "string" ? JSON.parse(ev.attendance) : (ev.attendance||{}),
-          att_code: typeof ev.att_code === "string" ? JSON.parse(ev.att_code) : (ev.att_code||null),
-        })));
-        // Populate local att codes from Supabase so check-in works on all devices
-        const codes = {};
-        data.forEach(ev=>{
-          if (ev.att_code) {
-            codes[ev.id] = typeof ev.att_code === "string" ? JSON.parse(ev.att_code) : ev.att_code;
-          }
-        });
-        if (Object.keys(codes).length > 0) setEventAttCodes(prev=>({...prev,...codes}));
-      } else {
-        setEvents(lsGet("rampageEvents",[]));
-      }
-    } catch {
-      setEvents(lsGet("rampageEvents",[]));
-    }
-  };
-
-  const loadWinners = async()=>{
-    try {
-      const { data, error } = await supabase.from("winners").select("*").order("created_at",{ascending:false});
-      if (!error && data) {
-        setWinners(data);
-      } else {
-        setWinners(lsGet("rampageWinners",[]));
-      }
-    } catch {
-      setWinners(lsGet("rampageWinners",[]));
-    }
   };
 
   // Persist members locally as backup
@@ -643,18 +521,14 @@ export default function App() {
   const handleBossImageUpload = (e)=>{
     const file = e.target.files?.[0]; if(!file||!bossImageModal) return;
     handleBossImageUploadGroup(file, bossImageModal.id, bossImageModal.group);
-    // Reset file input so same file can be re-selected next time
-    e.target.value = "";
   };
 
   // ── Boss group setter helper ──────────────────────────────────────────────
   const getSetterByGroup = (group) => {
-    if(group==="myrkrheim") return setMyrkrheimBosses;
     if(group==="folkvang_normal") return setFolkvangNormal;
     if(group==="folkvang_interserver") return setFolkvangInterserver;
     if(group==="canyon") return setCanyonBosses;
     if(group==="lindwurm") return setLindwurmBosses;
-    if(group==="hilders") return setHildersBosses;
     return setBosses;
   };
 
@@ -720,47 +594,14 @@ export default function App() {
     showToast("🗑️ Channel removed","warn");
   };
 
-  // Update boss image for any group — uploads to Supabase storage boss-images bucket
-  const handleBossImageUploadGroup = async (file, id, group)=>{
-    if (!file || !id || !group) return;
-    showToast("⏳ Uploading image...","info");
-    try {
-      const ext = file.name.split('.').pop() || 'png';
-      const path = `${group}_${id}_${Date.now()}.${ext}`;
-      const { data, error: upErr } = await supabase.storage
-        .from('boss-images')
-        .upload(path, file, { upsert: true, contentType: file.type });
-      if (upErr) {
-        console.error("Supabase upload error:", upErr);
-        showToast(`❌ Upload failed: ${upErr.message}`,"error");
-        // Fallback: base64
-        const reader = new FileReader();
-        reader.onload = ev=>{
-          getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:ev.target.result}:b));
-          setBossImageModal(null); showToast("🖼️ Saved locally (Supabase failed)","warn");
-        };
-        reader.readAsDataURL(file);
-        return;
-      }
-      const { data: urlData } = supabase.storage.from('boss-images').getPublicUrl(path);
-      const publicUrl = urlData?.publicUrl;
-      if (publicUrl) {
-        // Add cache-bust timestamp so browser doesn't show stale image
-        const freshUrl = `${publicUrl}?t=${Date.now()}`;
-        getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:freshUrl}:b));
-        setBossImageModal(null);
-        showToast("🖼️ Boss image uploaded!");
-      }
-    } catch(e) {
-      console.error("Upload exception:", e);
-      // Fallback: base64
-      const reader = new FileReader();
-      reader.onload = ev=>{
-        getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:ev.target.result}:b));
-        setBossImageModal(null); showToast("🖼️ Saved locally","warn");
-      };
-      reader.readAsDataURL(file);
-    }
+  // Update boss image for any group
+  const handleBossImageUploadGroup = (file, id, group)=>{
+    const reader = new FileReader();
+    reader.onload = ev=>{
+      getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:ev.target.result}:b));
+      setBossImageModal(null); showToast("🖼️ Boss image updated!");
+    };
+    reader.readAsDataURL(file);
   };
 
   // ── Members ───────────────────────────────────────────────────────────────
@@ -821,7 +662,7 @@ export default function App() {
   };
 
   // ── Events ────────────────────────────────────────────────────────────────
-  const handleCreateEvent = async()=>{
+  const handleCreateEvent = ()=>{
     if(!eventForm.name.trim()) { showToast("❌ Event name required","error"); return; }
     const evType = EVENT_TYPES.find(e=>e.id===eventForm.type);
     const ev = {
@@ -833,40 +674,22 @@ export default function App() {
       date: eventForm.date,
       notes: eventForm.notes,
       server: eventForm.server,
-      points: parseInt(eventForm.points) || eventPoints[eventForm.type] || evType?.defaultPoints || 5,
-      attendance: {},
+      points: parseInt(eventForm.points) || evType?.defaultPoints || 5,
+      attendance: {}, // memberId -> true/false
       createdBy: currentUser?.name,
-      created_at: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
     };
-    try {
-      const dbEv = {...ev, attendance: JSON.stringify({})};
-      const { error } = await supabase.from("events").insert([dbEv]);
-      if (error) throw error;
-      // Real-time sub will call loadEvents() automatically
-    } catch {
-      // Fallback: local state only
-      setEvents(prev=>[ev,...prev]);
-      lsSet("rampageEvents", [ev, ...lsGet("rampageEvents",[])]);
-    }
+    setEvents(prev=>[ev,...prev]);
     setShowCreateEvent(false);
-    setEventForm({ type:"sindri", name:"", date:today, notes:"", server:"", points: eventPoints["sindri"] || 10 });
+    setEventForm({ type:"sindri", name:"", date:today, notes:"", server:"", points:10 });
     showToast(`✅ Event "${ev.name}" created!`);
   };
 
   const handleMarkEventAttendance = async(eventId, memberId, present)=>{
-    // Optimistic local update first
-    let updatedAttendance = {};
     setEvents(prev=>prev.map(ev=>{
       if(ev.id!==eventId) return ev;
-      updatedAttendance = {...(ev.attendance||{}), [memberId]:present};
-      return {...ev, attendance:updatedAttendance};
+      return {...ev, attendance:{...ev.attendance, [memberId]:present}};
     }));
-    // Sync to Supabase
-    try {
-      const ev = events.find(e=>e.id===eventId);
-      const newAtt = {...(ev?.attendance||{}), [memberId]:present};
-      await supabase.from("events").update({attendance: JSON.stringify(newAtt)}).eq("id",eventId);
-    } catch {}
     // Give/remove points
     const ev = events.find(e=>e.id===eventId);
     if(!ev) return;
@@ -885,142 +708,64 @@ export default function App() {
     showToast("✅ All members marked present!");
   };
 
-  const handleDeleteEvent = async(eventId)=>{
-    try { await supabase.from("events").delete().eq("id",eventId); } catch {}
+  const handleDeleteEvent = (eventId)=>{
     setEvents(prev=>prev.filter(e=>e.id!==eventId));
     showToast("🗑️ Event deleted","warn");
   };
 
-  // ── Attendance Code Security ───────────────────────────────────────────────
-  const generateAttCode = async(eventId)=>{
-    const code = Math.random().toString(36).substring(2,8).toUpperCase();
-    const codeData = { code, expiresAt: Date.now() + 10*60*1000, usedBy:[] };
-    setEventAttCodes(prev=>({...prev,[eventId]:codeData}));
-    setGeneratedCode(code);
-    // Also write the code into the events table so other admins can see it if needed
-    try {
-      await supabase.from("events").update({ att_code: JSON.stringify(codeData) }).eq("id",eventId);
-    } catch {}
-    showToast(`🔑 Code generated: ${code}`);
-    return code;
-  };
-
-  const handleMemberSelfAttendance = async(eventId, code)=>{
-    // Always read the code from Supabase (the source of truth), not local state
-    let stored = null;
-    try {
-      const { data } = await supabase.from("events").select("att_code").eq("id", eventId).single();
-      if (data?.att_code) {
-        stored = typeof data.att_code === "string" ? JSON.parse(data.att_code) : data.att_code;
-      }
-    } catch {}
-    // Fallback to local state if Supabase fails
-    if (!stored) stored = eventAttCodes[eventId];
-
-    if(!stored || !stored.code) { showToast("❌ No active code for this event — ask admin to generate one","error"); return false; }
-    if(Date.now() > stored.expiresAt) { showToast("❌ Code expired — ask admin for a new code","error"); return false; }
-    if(stored.code.toUpperCase() !== code.toUpperCase().trim()) { showToast("❌ Wrong code — try again","error"); return false; }
-    if(stored.usedBy?.includes(currentUser?.name)) { showToast("⚠️ You already checked in for this event!","warn"); return false; }
-
-    // Mark self as present
-    const myMember = members.find(m=>m.name===currentUser?.name);
-    if(!myMember) { showToast("❌ Could not find your member profile","error"); return false; }
-    await handleMarkEventAttendance(eventId, myMember.id, true);
-
-    // Update usedBy in Supabase so the same code can't be reused
-    const updatedCode = {...stored, usedBy:[...(stored.usedBy||[]), currentUser?.name]};
-    try {
-      await supabase.from("events").update({ att_code: JSON.stringify(updatedCode) }).eq("id", eventId);
-    } catch {}
-    setEventAttCodes(prev=>({...prev,[eventId]:updatedCode}));
-
-    showToast("✅ Attendance recorded! Points awarded.");
-    setShowMemberAttModal(null); setAttCodeInput("");
-    return true;
-  };
-
-  // ── Auction image upload ──────────────────────────────────────────────────
+  // ── Auction image upload to Supabase storage ──────────────────────────────
   const handleAuctionImageUpload = async(e)=>{
     const file = e.target.files?.[0]; if(!file) return;
     setAuctionImgUploading(true);
-    // Use the existing public 'auction-images' bucket
     try {
       const ext = file.name.split(".").pop();
-      const path = `auction-${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from("auction-images").upload(path, file, {cacheControl:"3600",upsert:false});
+      const path = `auction/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from("asset").upload(path, file, {cacheControl:"3600",upsert:false});
       if(!error) {
-        const { data: urlData } = supabase.storage.from("auction-images").getPublicUrl(path);
+        const { data: urlData } = supabase.storage.from("asset").getPublicUrl(path);
         setAuctionForm(p=>({...p,imageUrl:urlData.publicUrl,image:null}));
-        showToast("🖼️ Image uploaded to storage!");
-        setAuctionImgUploading(false);
-        return;
+        showToast("🖼️ Image uploaded!");
+      } else {
+        // fallback: local base64
+        const reader = new FileReader();
+        reader.onload = ev=>setAuctionForm(p=>({...p,imageUrl:ev.target.result,image:null}));
+        reader.readAsDataURL(file);
       }
-      console.warn("Storage upload error:", error.message);
-    } catch(err) { console.warn("Storage exception:", err); }
-
-    // Fallback: compress to small thumbnail so it fits in DB text column
-    try {
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(file);
-      img.onload = ()=>{
-        const canvas = document.createElement("canvas");
-        const MAX = 80;
-        const scale = Math.min(MAX/img.width, MAX/img.height, 1);
-        canvas.width = Math.round(img.width*scale);
-        canvas.height = Math.round(img.height*scale);
-        canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
-        const compressed = canvas.toDataURL("image/jpeg", 0.6);
-        setAuctionForm(p=>({...p,imageUrl:compressed,image:null}));
-        URL.revokeObjectURL(objectUrl);
-        showToast("🖼️ Image ready (compressed fallback)");
-        setAuctionImgUploading(false);
-      };
-      img.onerror = ()=>{ setAuctionImgUploading(false); showToast("❌ Image load failed","error"); };
-      img.src = objectUrl;
-      return;
-    } catch {}
+    } catch {
+      const reader = new FileReader();
+      reader.onload = ev=>setAuctionForm(p=>({...p,imageUrl:ev.target.result,image:null}));
+      reader.readAsDataURL(file);
+    }
     setAuctionImgUploading(false);
-    showToast("❌ Image upload failed","error");
   };
 
   const handleAddAuctionItem = async()=>{
     if(!auctionForm.name.trim()) { showToast("❌ Item name required","error"); return; }
     const endTime = Date.now() + (parseFloat(auctionForm.durationHours)||24)*3600000;
-    let safeImage = auctionForm.imageUrl || "🏺";
-    if(safeImage.startsWith("data:") && safeImage.length > 50000) {
-      showToast("⚠️ Image too large — using default icon","warn");
-      safeImage = "🏺";
-    }
-    // Only include columns that exist in Supabase — NO id (auto-generated), NO endTime
-    const dbItem = {
+    const item = {
+      id: String(Date.now()),
       name: auctionForm.name,
       rarity: auctionForm.rarity,
       minBid: parseInt(auctionForm.minBid)||500,
-      currentBid: 0,
-      highBidder: null,
-      bids: JSON.stringify([]),
-      locked: false,
-      winner: null,
-      claimed: false,
-      image: safeImage,
+      currentBid: 0, highBidder: null,
+      bids: [],
+      locked: false, winner: null, claimed: false,
+      image: auctionForm.imageUrl || "🏺",
       end_time: new Date(endTime).toISOString(),
+      endTime,
       created_at: new Date().toISOString(),
     };
     try {
+      const dbItem = {...item, bids:JSON.stringify([]), endTime:undefined};
       const { error } = await supabase.from("auction_items").insert([dbItem]);
-      if(error) {
-        console.error("Supabase insert error:", error);
-        showToast(`❌ Save failed: ${error.message}`,"error");
-        return;
-      }
+      if(error) throw error;
       await loadAuctionItems();
-      setShowAddAuction(false);
-      setAuctionForm({name:"",rarity:"Epic",minBid:1000,durationHours:24,image:null,imageUrl:""});
-      showToast(`✅ ${auctionForm.name} added to auction!`);
-    } catch(err) {
-      console.error("Auction insert exception:", err);
-      showToast("❌ Could not save to database — check console","error");
+    } catch {
+      setAuctionItems(prev=>[item,...prev]);
     }
+    setShowAddAuction(false);
+    setAuctionForm({name:"",rarity:"Epic",minBid:1000,durationHours:24,image:null,imageUrl:""});
+    showToast(`✅ ${item.name} added to auction!`);
   };
 
   const handleEditAuctionItem = async()=>{
@@ -1052,9 +797,8 @@ export default function App() {
     const amount = parseInt(bidAmount);
     const myMember = members.find(m=>m.name===currentUser?.name);
     const myPoints = myMember?.points || 0;
-    // Only Leader, Elder, Member can bid. Recruits must wait 7 days (game rule).
-    const canBidRole = ["Leader","Elder","Member","Admin"].includes(currentUser?.role);
-    if(!canBidRole) { showToast("❌ Recruits cannot bid — 7-day waiting period applies in-game","error"); return; }
+    // Recruits cannot bid
+    if(currentUser?.role==="Recruit") { showToast("❌ Recruits cannot bid — wait for promotion","error"); return; }
     if(!bidModal||isNaN(amount)) { showToast("❌ Enter a valid amount","error"); return; }
     if(amount <= bidModal.currentBid && bidModal.currentBid > 0) { showToast(`❌ Bid must exceed ${bidModal.currentBid.toLocaleString()} pts`,"error"); return; }
     if(amount < bidModal.minBid) { showToast(`❌ Minimum bid is ${bidModal.minBid.toLocaleString()} pts`,"error"); return; }
@@ -1062,92 +806,37 @@ export default function App() {
     const myName = currentUser?.name||"Guest";
     const newBid = {bidder:myName, amount, time:new Date().toLocaleTimeString()};
     const updatedBids = [...(bidModal.bids||[]), newBid];
-
-    // ── Points: deduct from new bidder, refund previous high bidder ───────────
-    const prevHighBidder = bidModal.highBidder;
-    const prevBidAmount  = bidModal.currentBid || 0;
-
-    // 1) Deduct points from the new bidder
-    const myUpdatedPoints = myPoints - amount;
-    await supabase.from("members").update({points: myUpdatedPoints}).eq("id", myMember.id);
-    setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points: myUpdatedPoints} : m));
-    if(currentUser.id === myMember.id) setCurrentUser(prev=>({...prev, points: myUpdatedPoints}));
-
-    // 2) Refund the previous high bidder (if someone was outbid)
-    if(prevHighBidder && prevHighBidder !== myName && prevBidAmount > 0) {
-      const prevMember = members.find(m=>m.name===prevHighBidder);
-      if(prevMember) {
-        const refundedPoints = (prevMember.points || 0) + prevBidAmount;
-        await supabase.from("members").update({points: refundedPoints}).eq("id", prevMember.id);
-        setMembers(prev=>prev.map(m=>m.id===prevMember.id ? {...m, points: refundedPoints} : m));
-      }
+    // Real-time update via Supabase
+    try {
+      const { error } = await supabase.from("auction_items").update({
+        currentBid: amount,
+        highBidder: myName,
+        bids: JSON.stringify(updatedBids),
+      }).eq("id",bidModal.id);
+      if(!error) await loadAuctionItems();
+      else throw error;
+    } catch {
+      setAuctionItems(prev=>prev.map(item=>{
+        if(item.id!==bidModal.id) return item;
+        return {...item, currentBid:amount, highBidder:myName, bids:updatedBids};
+      }));
     }
-    // ─────────────────────────────────────────────────────────────────────────
-
-    // Update auction item in Supabase — realtime subscription refreshes all users
-    const { error } = await supabase.from("auction_items").update({
-      currentBid: amount,
-      highBidder: myName,
-      bids: JSON.stringify(updatedBids),
-    }).eq("id", bidModal.id);
-    if(error) {
-      showToast(`❌ Bid failed: ${error.message}`, "error");
-      // Rollback points on failure
-      await supabase.from("members").update({points: myPoints}).eq("id", myMember.id);
-      setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points: myPoints} : m));
-      if(currentUser.id === myMember.id) setCurrentUser(prev=>({...prev, points: myPoints}));
-      return;
-    }
-    // Optimistic local update so the bidder sees it instantly
-    setAuctionItems(prev=>prev.map(item=>{
-      if(item.id!==bidModal.id) return item;
-      return {...item, currentBid:amount, highBidder:myName, bids:updatedBids};
-    }));
     setBidModal(null); setBidAmount("");
     showToast(`🏺 Bid of ${amount.toLocaleString()} pts placed on ${bidModal.name}!`);
   };
 
   const handleAnnounceWinner = async(item)=>{
-    if(!item.highBidder) { showToast("❌ No bids placed yet","error"); return; }
-    // Check for duplicate — prevent announcing same item twice
-    const alreadyWon = winners.some(w=>w.itemName===item.name&&w.winner===item.highBidder);
-    if(alreadyWon) { showToast("⚠️ Winner already announced for this item","warn"); return; }
-    const w = {
-      // No client-generated id — let Supabase auto-generate uuid
-      itemName: item.name, winner: item.highBidder, points: item.currentBid,
-      date: new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}),
-      claimed: false, rarity: item.rarity, image: item.image,
-      created_at: new Date().toISOString(),
-    };
-    try {
-      const { error: wErr } = await supabase.from("winners").insert([w]);
-      if(wErr) throw wErr;
-      const { error: lErr } = await supabase.from("auction_items")
-        .update({locked:true, winner:item.highBidder})
-        .eq("id", item.id);
-      if(lErr) throw lErr;
-      await loadAuctionItems();
-      await loadWinners();
-    } catch(e) {
-      console.error("Announce winner error:", e);
-      showToast(`❌ Failed: ${e.message}`,"error");
-      return;
+    const w = {id:Date.now(),itemName:item.name,winner:item.highBidder,points:item.currentBid,date:new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}),claimed:false,rarity:item.rarity,image:item.image};
+    setWinners(prev=>[...prev,w]);
+    try { await supabase.from("auction_items").update({locked:true,winner:item.highBidder}).eq("id",item.id); await loadAuctionItems(); } catch {
+      setAuctionItems(prev=>prev.map(i=>i.id===item.id?{...i,locked:true,winner:item.highBidder}:i));
     }
     if(discordConnected) showToast("📢 Discord notified: Winner announced!","info");
     showToast(`🏆 ${item.highBidder} won ${item.name}!`);
   };
 
-  const handleClaimWinner = async(id)=>{
-    try { await supabase.from("winners").update({claimed:true}).eq("id",id); } catch {}
-    setWinners(prev=>prev.map(w=>w.id===id?{...w,claimed:true}:w));
-    showToast("✅ Item marked as claimed!");
-  };
-
-  const handleRemoveWinner = async(id)=>{
-    try { await supabase.from("winners").delete().eq("id",id); } catch {}
-    setWinners(prev=>prev.filter(w=>w.id!==id));
-    showToast("🗑️ Removed","warn");
-  };
+  const handleClaimWinner = (id)=>{ setWinners(prev=>prev.map(w=>w.id===id?{...w,claimed:true}:w)); showToast("✅ Item marked as claimed!"); };
+  const handleRemoveWinner = (id)=>{ setWinners(prev=>prev.filter(w=>w.id!==id)); showToast("🗑️ Removed","warn"); };
 
   // ── Excel Export ──────────────────────────────────────────────────────────
   const exportToExcel = (silent=false)=>{
@@ -1200,11 +889,7 @@ export default function App() {
   };
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  const ROLE_ORDER = { Leader:0, Elder:1, Member:2, Recruit:3, Admin:99 };
-  const filtered = members
-    .filter(m=>m.role!=="Admin") // hide Admin from members list
-    .filter(m=>m.name.toLowerCase().includes(search.toLowerCase())||m.cls?.toLowerCase().includes(search.toLowerCase()))
-    .sort((a,b)=>(ROLE_ORDER[a.role]??99)-(ROLE_ORDER[b.role]??99));
+  const filtered       = members.filter(m=>m.name.toLowerCase().includes(search.toLowerCase())||m.cls?.toLowerCase().includes(search.toLowerCase()));
   const activeCount    = members.filter(m=>m.status==="Active").length;
   const leaderCount    = members.filter(m=>m.role==="Leader").length;
   const elderCount     = members.filter(m=>m.role==="Elder").length;
@@ -1443,9 +1128,6 @@ export default function App() {
               ))}
             </div>
 
-            {/* ── BOSS SCHEDULE (dashboard) ── */}
-            <BossSchedulePanel />
-
             <div style={{background:"linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.07)",borderRadius:20,overflow:"hidden"}}>
               <div style={{padding:"16px 22px 12px",borderBottom:"1px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
@@ -1453,7 +1135,7 @@ export default function App() {
                   <p style={{color:"#3d5070",fontSize:11,marginTop:1}}>{members.length} members</p>
                 </div>
               </div>
-              <MembersTable filtered={filtered} currentUser={currentUser} canManage={canManage} onEdit={setEditMember} onRemove={handleRemoveMember} onAddPoints={canManage?handleAddPoints:null} onChangeRole={canManage?handleChangeRole:null} />
+              <MembersTable filtered={filtered} currentUser={currentUser} canManage={canManage} onEdit={setEditMember} onRemove={handleRemoveMember} onAddPoints={isAdmin?handleAddPoints:null} />
             </div>
           </div>}
 
@@ -1472,7 +1154,7 @@ export default function App() {
                   </button>
                 )}
               </div>
-              <MembersTable filtered={filtered} currentUser={currentUser} canManage={canManage} onEdit={setEditMember} onRemove={handleRemoveMember} onAddPoints={canManage?handleAddPoints:null} onChangeRole={canManage?handleChangeRole:null} showFull />
+              <MembersTable filtered={filtered} currentUser={currentUser} canManage={canManage} onEdit={setEditMember} onRemove={handleRemoveMember} onAddPoints={isAdmin?handleAddPoints:null} showFull />
             </div>
           )}
 
@@ -1483,21 +1165,6 @@ export default function App() {
                 <span>⏱</span>
                 <span>Boss timers <strong>persist across sessions</strong> — they continue counting down even after refresh. Elapsed time shown when boss is LIVE.</span>
               </div>
-
-              {/* ── OVERWORLD MAPS ── */}
-              <OverworldMapsPanel canManage={canManage} />
-
-              {/* ── FOLKVANG · VALHALLA DUNGEON ── */}
-              <FolkvangDungeonCard
-                folkvangNormal={folkvangNormal}
-                folkvangInterserver={folkvangInterserver}
-                canManage={canManage}
-                killFlash={killFlash}
-                onKill={(id,group)=>handleMarkKilledGroup(id,group)}
-                onReset={(id,group)=>handleResetToZero(id,group)}
-                onSetTimer={(id,group)=>{setBossTimerModal({id,group});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
-                onImage={(id,group)=>{setBossImageModal({id,group});bossImgRef.current?.click();}}
-              />
 
               {/* Field Boss Schedule */}
               <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:"18px 20px",marginBottom:22}}>
@@ -1516,27 +1183,9 @@ export default function App() {
                 </div>
               </div>
 
-              {/* ── MYRKRHEIM BOSSES ── */}
+              {/* ── LIVE 4 BOSSES ── */}
               <BossGroupPanel
-                title="🏰 MYRKRHEIM BOSS"
-                subtitle="CH 1 & CH 2 — Respawn 30–90 min (elapsed timer when alive)"
-                color="#818cf8"
-                bosses={myrkrheimBosses}
-                groupKey="myrkrheim"
-                canManage={canManage}
-                killFlash={killFlash}
-                onKill={(id)=>handleMarkKilledGroup(id,"myrkrheim")}
-                onReset={(id)=>handleResetToZero(id,"myrkrheim")}
-                onSetTimer={(id)=>{setBossTimerModal({id,group:"myrkrheim"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
-                onImage={(id)=>{setBossImageModal({id,group:"myrkrheim"});bossImgRef.current?.click();}}
-                onAddChannel={(bossName,color)=>handleAddChannel("myrkrheim",bossName,color)}
-                onRemoveChannel={(id)=>handleRemoveChannel(id,"myrkrheim")}
-                showRespawnEdit={false}
-              />
-
-              {/* ── KINGSTOMB 1F BOSSES ── */}
-              <BossGroupPanel
-                title="⚰️ KINGSTOMB 1F BOSS"
+                title="⚔️ LIVE WORLD BOSSES"
                 subtitle="CH 1 & CH 2 — Respawn 30–90 min (elapsed timer when alive)"
                 color="#f59e0b"
                 bosses={bosses}
@@ -1550,6 +1199,42 @@ export default function App() {
                 onAddChannel={(bossName,color)=>handleAddChannel("live4",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"live4")}
                 showRespawnEdit={false}
+              />
+
+              {/* ── FOLKVANG NORMAL ── */}
+              <BossGroupPanel
+                title="🏔️ FOLKVANG BOSS — Normal"
+                subtitle="5 Floors (1F–5F) · Normal server"
+                color="#f97316"
+                bosses={folkvangNormal}
+                groupKey="folkvang_normal"
+                canManage={canManage}
+                killFlash={killFlash}
+                onKill={(id)=>handleMarkKilledGroup(id,"folkvang_normal")}
+                onReset={(id)=>handleResetToZero(id,"folkvang_normal")}
+                onSetTimer={(id)=>{setBossTimerModal({id,group:"folkvang_normal"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
+                onImage={(id)=>{setBossImageModal({id,group:"folkvang_normal"});bossImgRef.current?.click();}}
+                onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"folkvang_normal",secs)}
+                showRespawnEdit={true}
+                floorLabels={true}
+              />
+
+              {/* ── FOLKVANG INTERSERVER ── */}
+              <BossGroupPanel
+                title="🌐 FOLKVANG BOSS — Interserver"
+                subtitle="5 Floors (1F–5F) · Interserver"
+                color="#e879f9"
+                bosses={folkvangInterserver}
+                groupKey="folkvang_interserver"
+                canManage={canManage}
+                killFlash={killFlash}
+                onKill={(id)=>handleMarkKilledGroup(id,"folkvang_interserver")}
+                onReset={(id)=>handleResetToZero(id,"folkvang_interserver")}
+                onSetTimer={(id)=>{setBossTimerModal({id,group:"folkvang_interserver"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
+                onImage={(id)=>{setBossImageModal({id,group:"folkvang_interserver"});bossImgRef.current?.click();}}
+                onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"folkvang_interserver",secs)}
+                showRespawnEdit={true}
+                floorLabels={true}
               />
 
               {/* ── CANYON OF NIDAVELLIR ── */}
@@ -1589,25 +1274,6 @@ export default function App() {
                 onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"lindwurm",secs)}
                 showRespawnEdit={true}
               />
-
-              {/* ── HILDER'S LABYRINTH ── */}
-              <BossGroupPanel
-                title="🌀 HILDER'S LABYRINTH — Lv.70-80 Required"
-                subtitle="Inter-Server · 3 Bosses · 2+ Channels"
-                color="#a78bfa"
-                bosses={hildersBosses}
-                groupKey="hilders"
-                canManage={canManage}
-                killFlash={killFlash}
-                onKill={(id)=>handleMarkKilledGroup(id,"hilders")}
-                onReset={(id)=>handleResetToZero(id,"hilders")}
-                onSetTimer={(id)=>{setBossTimerModal({id,group:"hilders"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
-                onImage={(id)=>{setBossImageModal({id,group:"hilders"});bossImgRef.current?.click();}}
-                onAddChannel={(bossName,color)=>handleAddChannel("hilders",bossName,color)}
-                onRemoveChannel={(id)=>handleRemoveChannel(id,"hilders")}
-                onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"hilders",secs)}
-                showRespawnEdit={true}
-              />
             </div>
           )}
 
@@ -1619,7 +1285,7 @@ export default function App() {
                 <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                   {EVENT_TYPES.map(et=>(
                     <div key={et.id} style={{background:`rgba(0,0,0,0.3)`,border:`1px solid ${et.color}40`,borderRadius:10,padding:"7px 14px",fontSize:12,color:et.color,fontWeight:700,display:"flex",alignItems:"center",gap:6}}>
-                      {et.icon} {et.label} <span style={{opacity:0.6,fontWeight:400}}>{et.adminOnly?"Admin assigns":`+${eventPoints[et.id]??et.defaultPoints}pts`}</span>
+                      {et.icon} {et.label} <span style={{opacity:0.6,fontWeight:400}}>+{et.defaultPoints}pts</span>
                     </div>
                   ))}
                 </div>
@@ -1675,22 +1341,11 @@ export default function App() {
                                 style={{background:isMarking?"rgba(99,102,241,0.2)":"rgba(255,255,255,0.06)",border:`1px solid ${isMarking?"rgba(99,102,241,0.4)":"rgba(255,255,255,0.1)"}`,color:isMarking?"#a5b4fc":"#64748b",padding:"8px 14px",fontSize:12}}>
                                 {isMarking?"✅ Done":"📋 Mark"}
                               </button>
-                              <button className="btn" onClick={()=>{setShowAttCodeModal(ev.id);setGeneratedCode("");}}
-                                style={{background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.3)",color:"#fbbf24",padding:"8px 12px",fontSize:12}}
-                                title="Generate attendance verification code">
-                                🔑
-                              </button>
                               <button className="btn" onClick={()=>handleDeleteEvent(ev.id)}
                                 style={{background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.2)",color:"#f87171",padding:"8px 10px",fontSize:12}}>
                                 🗑️
                               </button>
                             </div>
-                          )}
-                          {!canManage&&(
-                            <button className="btn" onClick={()=>setShowMemberAttModal({eventId:ev.id,event:ev})}
-                              style={{background:ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"rgba(52,211,153,0.12)":"rgba(99,102,241,0.15)",border:`1px solid ${ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"rgba(52,211,153,0.35)":"rgba(99,102,241,0.35)"}`,color:ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"#34d399":"#a5b4fc",padding:"8px 14px",fontSize:12,fontWeight:700}}>
-                              {ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"✅ Checked In":"📲 Check In"}
-                            </button>
                           )}
                         </div>
                       </div>
@@ -1812,7 +1467,7 @@ export default function App() {
                     <div style={{fontSize:13,fontWeight:700,color:"#60a5fa"}}>Points-Based Bidding</div>
                     <div style={{fontSize:11.5,color:"#4a6a8a",marginTop:1}}>
                       Balance: <strong style={{color:"#60a5fa"}}>{myPoints.toLocaleString()} pts</strong>
-                      {currentUser?.role==="Recruit"&&<span style={{color:"#f87171",marginLeft:10}}>⚠️ Recruits cannot bid (7-day game rule)</span>}
+                      {currentUser?.role==="Recruit"&&<span style={{color:"#f87171",marginLeft:10}}>⚠️ Recruits cannot bid</span>}
                     </div>
                   </div>
                 </div>
@@ -1862,8 +1517,7 @@ export default function App() {
                   const myBid=item.bids?.find(b=>b.bidder===currentUser?.name);
                   const amWinning=item.highBidder===currentUser?.name;
                   const timeLeft=(item.endTime||0)-now;
-                  const canBidRole = ["Leader","Elder","Member","Admin"].includes(currentUser?.role);
-                  const canBid = myPoints >= item.minBid && !item.locked && canBidRole && timeLeft>0;
+                  const canBid = myPoints >= item.minBid && !item.locked && currentUser?.role!=="Recruit" && !item.locked && timeLeft>0;
                   const isImg = item.image && (item.image.startsWith("http")||item.image.startsWith("data"));
                   return(
                     <div key={item.id} className={`auction-card${item.locked?" locked":""}`}
@@ -1931,7 +1585,7 @@ export default function App() {
                       <div style={{display:"flex",gap:9,position:"relative",zIndex:1,flexWrap:"wrap"}}>
                         {!item.locked&&timeLeft>0&&<button className="btn" onClick={()=>{setBidModal(item);setBidAmount("");}} disabled={!canBid}
                           style={{flex:1,minWidth:100,background:canBid?`linear-gradient(135deg,${rs.color}30,${rs.color}15)`:"rgba(255,255,255,0.04)",border:`1px solid ${canBid?rs.color+"50":"rgba(255,255,255,0.1)"}`,color:canBid?rs.color:"#3d5070",padding:"10px",fontSize:13,opacity:canBid?1:0.7}}>
-                          {currentUser?.role==="Recruit"?"🔒 7-Day Wait":"🏺 Place Bid"}
+                          {currentUser?.role==="Recruit"?"🔒 No Bid":"🏺 Place Bid"}
                         </button>}
                         {isAdmin&&!item.locked&&item.highBidder&&(
                           <button className="btn" onClick={()=>handleAnnounceWinner(item)}
@@ -1965,12 +1619,7 @@ export default function App() {
                       <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:rs.color}} />
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
                         <div style={{display:"flex",alignItems:"center",gap:11}}>
-                          <div style={{width:48,height:48,borderRadius:12,background:rs.bg,border:`1px solid ${rs.color}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,overflow:"hidden"}}>
-                            {w.image&&(w.image.startsWith("http")||w.image.startsWith("data"))
-                              ? <img src={w.image} alt={w.itemName} style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:12}} />
-                              : <span>{w.image||"🏆"}</span>
-                            }
-                          </div>
+                          <div style={{width:48,height:48,borderRadius:12,background:rs.bg,border:`1px solid ${rs.color}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>{w.image}</div>
                           <div>
                             <div style={{fontSize:14,fontWeight:700,color:"#e2e8f0"}}>{w.itemName}</div>
                             <span style={{fontSize:10.5,color:rs.color,fontWeight:700}}>{w.rarity}</span>
@@ -2035,53 +1684,18 @@ export default function App() {
 
               {/* Event Points Config */}
               <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"22px"}}>
-                <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#f1f5f9",marginBottom:4,letterSpacing:"0.04em"}}>🏆 Event Points Config</h3>
-                <p style={{color:"#3d5070",fontSize:11.5,marginBottom:16,lineHeight:1.6}}>
-                  {isAdmin||isLeader ? "Edit default points per event type. Saved instantly." : "Default points awarded per event type."}
-                </p>
-                {EVENT_TYPES.map(et=>{
-                  const pts = eventPoints[et.id] ?? et.defaultPoints;
-                  return(
-                    <div key={et.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,background:"rgba(255,255,255,0.02)",border:`1px solid ${et.adminOnly?"rgba(167,139,250,0.2)":"rgba(255,255,255,0.05)"}`,borderRadius:10,padding:"10px 14px"}}>
-                      <span style={{fontSize:18,flexShrink:0}}>{et.icon}</span>
-                      <span style={{flex:1,fontSize:13,color:"#e2e8f0",fontWeight:600}}>{et.label}</span>
-                      {et.adminOnly&&<span style={{fontSize:9,color:"#a78bfa",background:"rgba(167,139,250,0.1)",border:"1px solid rgba(167,139,250,0.25)",borderRadius:4,padding:"2px 6px",fontWeight:700}}>ADMIN ASSIGNS</span>}
-                      {isAdmin||isLeader ? (
-                        <div style={{display:"flex",alignItems:"center",gap:6}}>
-                          {!et.adminOnly&&<button onClick={()=>setEventPoints(p=>({...p,[et.id]:Math.max(0,(p[et.id]??et.defaultPoints)-1)}))}
-                            style={{width:28,height:28,borderRadius:7,background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.3)",color:"#f87171",cursor:"pointer",fontSize:16,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>}
-                          <input
-                            type="number" min="0" max="999"
-                            value={pts}
-                            onChange={e=>{
-                              const v = parseInt(e.target.value);
-                              if(!isNaN(v)&&v>=0) setEventPoints(p=>({...p,[et.id]:v}));
-                            }}
-                            style={{width:56,background:"rgba(255,255,255,0.07)",border:`1px solid ${et.color}50`,borderRadius:8,padding:"5px 6px",color:et.adminOnly?"#a78bfa":et.color,fontSize:15,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,textAlign:"center",outline:"none"}}
-                          />
-                          {!et.adminOnly&&<button onClick={()=>setEventPoints(p=>({...p,[et.id]:(p[et.id]??et.defaultPoints)+1}))}
-                            style={{width:28,height:28,borderRadius:7,background:"rgba(52,211,153,0.15)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",cursor:"pointer",fontSize:16,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>}
-                          <span style={{fontSize:10,color:"#3d5070",marginLeft:2}}>pts</span>
-                        </div>
-                      ) : (
-                        <div style={{background:`${et.color}18`,border:`1px solid ${et.color}40`,borderRadius:8,padding:"5px 14px",fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:et.adminOnly?"#a78bfa":et.color,minWidth:60,textAlign:"center"}}>
-                          {et.adminOnly?"—":`+${pts}`}
-                        </div>
-                      )}
+                <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#f1f5f9",marginBottom:16,letterSpacing:"0.04em"}}>🏆 Event Points Config</h3>
+                <p style={{color:"#3d5070",fontSize:11.5,marginBottom:14}}>Default points awarded per event type (editable per event when creating).</p>
+                {EVENT_TYPES.map(et=>(
+                  <div key={et.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:11}}>
+                    <span style={{fontSize:16,width:24}}>{et.icon}</span>
+                    <span style={{flex:1,fontSize:12.5,color:"#94a3b8",fontWeight:600}}>{et.label}</span>
+                    <div style={{background:`${et.color}18`,border:`1px solid ${et.color}40`,borderRadius:8,padding:"5px 14px",fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:et.color,minWidth:60,textAlign:"center"}}>
+                      +{et.defaultPoints}
                     </div>
-                  );
-                })}
-                {(isAdmin||isLeader)&&(
-                  <button className="btn" onClick={()=>{
-                    // Reset all to defaults
-                    const defaults = {};
-                    EVENT_TYPES.forEach(et=>{ defaults[et.id]=et.defaultPoints; });
-                    setEventPoints(defaults);
-                    showToast("🔄 Points reset to defaults");
-                  }} style={{width:"100%",marginTop:4,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"9px",fontSize:12}}>
-                    🔄 Reset to Defaults
-                  </button>
-                )}
+                  </div>
+                ))}
+                <p style={{color:"#3d5070",fontSize:11,marginTop:8}}>💡 To change default points, update EVENT_TYPES in the code, or override per event.</p>
               </div>
 
               {/* Excel Export */}
@@ -2242,10 +1856,9 @@ export default function App() {
               <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Event Type</label>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 {EVENT_TYPES.map(et=>(
-                  <button key={et.id} onClick={()=>setEventForm(p=>({...p,type:et.id,points:eventPoints[et.id]??et.defaultPoints,name:et.label}))}
+                  <button key={et.id} onClick={()=>setEventForm(p=>({...p,type:et.id,points:et.defaultPoints,name:et.label}))}
                     style={{background:eventForm.type===et.id?`${et.color}20`:"rgba(255,255,255,0.04)",border:`1px solid ${eventForm.type===et.id?et.color+"60":"rgba(255,255,255,0.1)"}`,borderRadius:10,padding:"10px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:eventForm.type===et.id?et.color:"#64748b",fontSize:12,fontWeight:700,fontFamily:"'Exo 2',sans-serif",transition:"all 0.15s"}}>
                     <span style={{fontSize:16}}>{et.icon}</span>{et.label}
-                    {et.adminOnly&&<span style={{fontSize:9,color:"#a78bfa",marginLeft:"auto"}}>ADMIN</span>}
                   </button>
                 ))}
               </div>
@@ -2262,9 +1875,7 @@ export default function App() {
                 <input className="dark-input" value={eventForm.date} onChange={e=>setEventForm(p=>({...p,date:e.target.value}))} />
               </div>
               <div>
-                <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>
-                  Points Awarded {EVENT_TYPES.find(et=>et.id===eventForm.type)?.adminOnly&&<span style={{color:"#a78bfa",fontSize:9}}>(Admin assigns)</span>}
-                </label>
+                <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Points Awarded</label>
                 <input className="dark-input" type="number" value={eventForm.points} onChange={e=>setEventForm(p=>({...p,points:e.target.value}))} />
               </div>
             </div>
@@ -2284,64 +1895,6 @@ export default function App() {
             <div style={{display:"flex",gap:11}}>
               <button className="btn" onClick={()=>setShowCreateEvent(false)} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"11px"}}>Cancel</button>
               <button className="btn" onClick={handleCreateEvent} style={{flex:2,background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"11px",boxShadow:"0 4px 22px rgba(99,102,241,0.35)"}}>Create Event</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Admin: Generate Attendance Code Modal */}
-      {showAttCodeModal&&(
-        <div onClick={()=>{setShowAttCodeModal(null);setGeneratedCode("");}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",backdropFilter:"blur(8px)",zIndex:250,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <div className="modal-box" onClick={e=>e.stopPropagation()}
-            style={{background:"#0a0c18",border:"1px solid rgba(251,191,36,0.3)",borderRadius:22,padding:"30px 32px",width:400,boxShadow:"0 32px 100px rgba(0,0,0,0.9)"}}>
-            <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:22,fontWeight:700,color:"#fbbf24",marginBottom:8,letterSpacing:"0.04em"}}>🔑 Attendance Code</h3>
-            <p style={{color:"#3d5070",fontSize:12,marginBottom:20,lineHeight:1.7}}>Generate a one-time 6-character code. Share it verbally with guild members during the event. Code expires in <strong style={{color:"#fbbf24"}}>10 minutes</strong>. Members enter it to self-check-in — prevents fake attendance.</p>
-            {generatedCode?(
-              <div style={{textAlign:"center",marginBottom:22}}>
-                <div style={{background:"rgba(251,191,36,0.08)",border:"2px dashed rgba(251,191,36,0.4)",borderRadius:16,padding:"24px",marginBottom:12}}>
-                  <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:44,fontWeight:700,color:"#fbbf24",letterSpacing:"0.2em"}}>{generatedCode}</div>
-                  <div style={{fontSize:11,color:"#3d5070",marginTop:6}}>Share this code with guild members in-game or Discord</div>
-                </div>
-                <div style={{background:"rgba(52,211,153,0.08)",border:"1px solid rgba(52,211,153,0.2)",borderRadius:10,padding:"10px",fontSize:11.5,color:"#34d399"}}>
-                  ✅ Code is active · Expires in 10 min · Used by members who check in
-                </div>
-              </div>
-            ):(
-              <div style={{textAlign:"center",marginBottom:22}}>
-                <div style={{fontSize:50,marginBottom:12}}>🎲</div>
-                <div style={{fontSize:13,color:"#64748b"}}>Click Generate to create a secure attendance code</div>
-              </div>
-            )}
-            <div style={{display:"flex",gap:11}}>
-              <button className="btn" onClick={()=>{setShowAttCodeModal(null);setGeneratedCode("");}} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"11px"}}>Close</button>
-              <button className="btn" onClick={()=>generateAttCode(showAttCodeModal)} style={{flex:2,background:"linear-gradient(135deg,#d97706,#fbbf24)",color:"#000",padding:"11px",fontWeight:800,fontSize:14}}>
-                {generatedCode?"🔄 New Code":"🔑 Generate Code"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Member: Self Check-In Modal */}
-      {showMemberAttModal&&(
-        <div onClick={()=>{setShowMemberAttModal(null);setAttCodeInput("");}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",backdropFilter:"blur(8px)",zIndex:250,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <div className="modal-box" onClick={e=>e.stopPropagation()}
-            style={{background:"#0a0c18",border:"1px solid rgba(99,102,241,0.3)",borderRadius:22,padding:"30px 32px",width:400,boxShadow:"0 32px 100px rgba(0,0,0,0.9)"}}>
-            <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:22,fontWeight:700,color:"#a5b4fc",marginBottom:6,letterSpacing:"0.04em"}}>📲 Event Check-In</h3>
-            <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:4}}>{showMemberAttModal.event?.name}</div>
-            <p style={{color:"#3d5070",fontSize:12,marginBottom:22,lineHeight:1.7}}>Enter the 6-character attendance code shared by the Leader or Elder during the event.</p>
-            <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.08em"}}>Attendance Code</label>
-            <input className="dark-input" placeholder="e.g. A3F9XQ" value={attCodeInput} onChange={e=>setAttCodeInput(e.target.value.toUpperCase())}
-              onKeyDown={e=>e.key==="Enter"&&handleMemberSelfAttendance(showMemberAttModal.eventId,attCodeInput)}
-              style={{textAlign:"center",fontFamily:"'Rajdhani',sans-serif",fontSize:28,fontWeight:700,letterSpacing:"0.2em",marginBottom:20}} maxLength={6} />
-            <div style={{background:"rgba(99,102,241,0.07)",border:"1px solid rgba(99,102,241,0.2)",borderRadius:10,padding:"10px 14px",marginBottom:20,fontSize:11,color:"#6366f1",lineHeight:1.6}}>
-              🛡️ This code is only valid during the event and expires in 10 minutes. Each code can only be used once per member.
-            </div>
-            <div style={{display:"flex",gap:11}}>
-              <button className="btn" onClick={()=>{setShowMemberAttModal(null);setAttCodeInput("");}} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"11px"}}>Cancel</button>
-              <button className="btn" onClick={()=>handleMemberSelfAttendance(showMemberAttModal.eventId,attCodeInput)} style={{flex:2,background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"11px",boxShadow:"0 4px 22px rgba(99,102,241,0.35)"}}>
-                ✅ Check In
-              </button>
             </div>
           </div>
         </div>
@@ -2598,16 +2151,7 @@ export default function App() {
 }
 
 // ── Members Table ─────────────────────────────────────────────────────────────
-function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAddPoints, onChangeRole, showFull }) {
-  const [editPointsId, setEditPointsId] = useState(null);
-  const [pointsDelta, setPointsDelta] = useState("");
-
-  const handlePointsSubmit = (memberId) => {
-    const delta = parseInt(pointsDelta);
-    if (!isNaN(delta) && delta !== 0) onAddPoints(memberId, delta);
-    setEditPointsId(null); setPointsDelta("");
-  };
-
+function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAddPoints, showFull }) {
   return (
     <div style={{overflowX:"auto"}}>
       <table style={{width:"100%",borderCollapse:"collapse"}}>
@@ -2615,7 +2159,7 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
           <tr style={{background:"rgba(255,255,255,0.02)"}}>
             <th style={TH}>Member</th>
             <th style={TH}>Class</th>
-            <th style={{...TH,color:"#a78bfa"}}>Role</th>
+            <th style={TH}>Role</th>
             <th style={{...TH,color:"#fbbf24"}}>Points</th>
             <th style={TH}>Status</th>
             {canManage&&<th style={TH}>Actions</th>}
@@ -2626,7 +2170,6 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
           {filtered.map(m=>{
             const rs=ROLE_STYLE[m.role]||ROLE_STYLE.Member;
             const ss=STATUS_STYLE[m.status]||STATUS_STYLE.Offline;
-            const isEditingPoints = editPointsId === m.id;
             return (
               <tr key={m.id} className="tr-row" style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
                 <td style={{padding:"13px 18px"}}>
@@ -2637,44 +2180,18 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
                 </td>
                 <td style={{padding:"13px 18px",color:"#64748b",fontSize:12.5}}>{m.cls||"—"}</td>
                 <td style={{padding:"13px 18px"}}>
-                  {canManage && onChangeRole && m.role !== "Admin" && m.id !== currentUser?.id ? (
-                    <select
-                      value={m.role}
-                      onChange={e=>onChangeRole(m.id, e.target.value)}
-                      style={{background:rs.bg,color:rs.color,border:`1px solid ${rs.border}`,borderRadius:7,padding:"4px 8px",fontSize:10.5,fontWeight:700,cursor:"pointer",fontFamily:"'Exo 2',sans-serif",outline:"none"}}>
-                      {ASSIGNABLE_ROLES.map(r=><option key={r} value={r} style={{background:"#0a0c18"}}>{r}</option>)}
-                    </select>
-                  ) : (
-                    <span style={{display:"inline-flex",padding:"4px 11px",borderRadius:7,background:rs.bg,color:rs.color,border:`1px solid ${rs.border}`,fontSize:10.5,fontWeight:700,letterSpacing:"0.04em"}}>{m.role}</span>
-                  )}
+                  <span style={{display:"inline-flex",padding:"4px 11px",borderRadius:7,background:rs.bg,color:rs.color,border:`1px solid ${rs.border}`,fontSize:10.5,fontWeight:700,letterSpacing:"0.04em"}}>{m.role}</span>
                 </td>
                 <td style={{padding:"13px 18px"}}>
-                  {isEditingPoints ? (
-                    <div style={{display:"flex",alignItems:"center",gap:5}}>
-                      <input
-                        type="number"
-                        value={pointsDelta}
-                        onChange={e=>setPointsDelta(e.target.value)}
-                        onKeyDown={e=>{ if(e.key==="Enter") handlePointsSubmit(m.id); if(e.key==="Escape"){setEditPointsId(null);setPointsDelta("");} }}
-                        autoFocus
-                        placeholder="±pts"
-                        style={{width:70,background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:7,padding:"4px 8px",color:"#fbbf24",fontSize:12,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,outline:"none",textAlign:"center"}}
-                      />
-                      <button onClick={()=>handlePointsSubmit(m.id)} style={{background:"rgba(52,211,153,0.15)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",borderRadius:6,padding:"4px 7px",cursor:"pointer",fontSize:12,fontWeight:700}}>✓</button>
-                      <button onClick={()=>{setEditPointsId(null);setPointsDelta("");}} style={{background:"rgba(248,113,113,0.12)",border:"1px solid rgba(248,113,113,0.25)",color:"#f87171",borderRadius:6,padding:"4px 7px",cursor:"pointer",fontSize:12}}>✕</button>
-                    </div>
-                  ) : (
-                    <div style={{display:"flex",alignItems:"center",gap:7}}>
-                      <span style={{color:"#fbbf24",fontWeight:700,fontSize:15,fontFamily:"'Rajdhani',sans-serif"}}>{(m.points||0).toLocaleString()}</span>
-                      {onAddPoints&&(
-                        <div className="points-ctrl" style={{display:"flex",gap:3}}>
-                          <button className="pts-btn" onClick={()=>onAddPoints(m.id,100)} style={{background:"rgba(52,211,153,0.15)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399"}}>+</button>
-                          <button className="pts-btn" onClick={()=>onAddPoints(m.id,-100)} style={{background:"rgba(248,113,113,0.12)",border:"1px solid rgba(248,113,113,0.25)",color:"#f87171"}}>−</button>
-                          <button className="pts-btn" onClick={()=>{setEditPointsId(m.id);setPointsDelta("");}} style={{background:"rgba(96,165,250,0.12)",border:"1px solid rgba(96,165,250,0.25)",color:"#60a5fa",fontSize:10}}>✏️</button>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{color:"#fbbf24",fontWeight:700,fontSize:15,fontFamily:"'Rajdhani',sans-serif"}}>{(m.points||0).toLocaleString()}</span>
+                    {onAddPoints&&(
+                      <div className="points-ctrl">
+                        <button className="pts-btn" onClick={()=>onAddPoints(m.id,100)} style={{background:"rgba(52,211,153,0.15)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399"}}>+</button>
+                        <button className="pts-btn" onClick={()=>onAddPoints(m.id,-100)} style={{background:"rgba(248,113,113,0.12)",border:"1px solid rgba(248,113,113,0.25)",color:"#f87171"}}>−</button>
+                      </div>
+                    )}
+                  </div>
                 </td>
                 <td style={{padding:"13px 18px"}}>
                   <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 11px",borderRadius:7,background:ss.bg,color:ss.color,fontSize:10.5,fontWeight:700}}>
@@ -2685,7 +2202,7 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
                   <td style={{padding:"13px 18px"}}>
                     <div style={{display:"flex",gap:6}}>
                       <button className="ghost-btn" onClick={()=>onEdit(m)}>✏️</button>
-                      {m.role!=="Leader"&&m.role!=="Admin"&&<button className="ghost-btn" onClick={()=>onRemove(m.id)} style={{color:"#f87171"}}>🗑️</button>}
+                      {m.role!=="Leader"&&<button className="ghost-btn" onClick={()=>onRemove(m.id)} style={{color:"#f87171"}}>🗑️</button>}
                     </div>
                   </td>
                 )}
@@ -2699,512 +2216,105 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
   );
 }
 
-// ── Boss Schedule Panel (UTC+8, real-time clock) ─────────────────────────────
-const BOSS_SCHEDULE = [
-  { map:"Canyon of the World Tree Depth", ch:"Ch. 1", boss:"Twilight Overlord Rogvalt", days:[0,3,6], time:"21:00" },
-  { map:"Vale of Ragnarok",               ch:"Ch. 1", boss:"Nargrim",                   days:[1,6],   time:"21:05" },
-  { map:"Crossroads of Ragnarok",         ch:"Ch. 1", boss:"Faded Oath Vargreif",       days:[3,5],   time:"21:10" },
-  { map:"(Inter-Server) Folkvang 5F",     ch:"Ch. 1", boss:"Twilight Disaster Nirva",   days:[0,1,5], time:"21:15" },
-  { map:"Forgotten Holy Temple",          ch:"Ch. 1", boss:"Phantom Sovereign Skoll",   days:[0,2,4,6],time:"21:20"},
-  { map:"Myrkrheim",                      ch:"Ch. 1", boss:"Warlord Hrungner",           days:[2,5],   time:"21:30" },
-  { map:"King's Tomb",                    ch:"Ch. 1", boss:"Gravebinder Ulfgar",         days:[1,3,6], time:"21:45" },
-  { map:"Lindwurm Cave",                  ch:"Ch. 1", boss:"Lindwurm the Ancient",       days:[0,4],   time:"22:00" },
-  { map:"Hilder's Labyrinth",             ch:"Ch. 1", boss:"Chaos Herald Draven",        days:[2,5,6], time:"22:15" },
-  { map:"Twisted Plateau",                ch:"Ch. 1", boss:"Stormbringer Valdris",        days:[1,3,4], time:"22:30" },
-];
-const DAY_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-
-function BossSchedulePanel() {
-  const [collapsed, setCollapsed] = useState(false);
-  const [nowUTC8, setNowUTC8] = useState(()=>new Date(Date.now() + 8*3600000));
-
-  useEffect(()=>{
-    const t = setInterval(()=>setNowUTC8(new Date(Date.now() + 8*3600000)), 1000);
-    return ()=>clearInterval(t);
-  },[]);
-
-  const todayUTC8   = nowUTC8.getUTCDay(); // 0=Sun
-  const curH        = nowUTC8.getUTCHours();
-  const curM        = nowUTC8.getUTCMinutes();
-  const curS        = nowUTC8.getUTCSeconds();
-  const nowMins     = curH * 60 + curM;
-
-  // Find next upcoming boss today or next days
-  const getCountdown = (boss)=>{
-    const [bh, bm] = boss.time.split(":").map(Number);
-    const bossMins = bh * 60 + bm;
-    // Check if boss spawns today and hasn't passed yet
-    if(boss.days.includes(todayUTC8) && nowMins < bossMins) {
-      const diff = (bossMins - nowMins) * 60 - curS;
-      const h = Math.floor(diff/3600), m = Math.floor((diff%3600)/60), s = diff%60;
-      return { label:`${h}h ${m}m ${s}s`, soon: diff < 1800, active: diff < 300 };
-    }
-    return null;
-  };
-
-  const todayBosses = BOSS_SCHEDULE.filter(b=>b.days.includes(todayUTC8));
-  const otherBosses = BOSS_SCHEDULE.filter(b=>!b.days.includes(todayUTC8));
-
-  const clockStr = `${String(curH).padStart(2,"0")}:${String(curM).padStart(2,"0")}:${String(curS).padStart(2,"0")}`;
-
-  return (
-    <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(251,191,36,0.18)",borderRadius:18,marginBottom:22,overflow:"hidden",transition:"all 0.3s"}}>
-      {/* Header — clickable to collapse */}
-      <div onClick={()=>setCollapsed(p=>!p)}
-        style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",borderBottom:collapsed?"none":"1px solid rgba(251,191,36,0.1)",cursor:"pointer",background:"rgba(251,191,36,0.04)",userSelect:"none"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <span style={{fontSize:18}}>📅</span>
-          <div>
-            <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:"#fbbf24",letterSpacing:"0.06em"}}>BOSS SCHEDULE · UTC+8</div>
-            <div style={{fontSize:10.5,color:"#3d5070",marginTop:1}}>{todayBosses.length} bosses today · Respawn resets daily 12:00 AM UTC+8</div>
-          </div>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:14}}>
-          <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:15,fontWeight:700,color:"#fbbf24",letterSpacing:"0.08em",background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.25)",padding:"3px 10px",borderRadius:7}}>{clockStr}</span>
-          <span style={{color:"#3d5070",fontSize:14,transition:"transform 0.25s",display:"inline-block",transform:collapsed?"rotate(0deg)":"rotate(180deg)"}}>▾</span>
-        </div>
-      </div>
-
-      {/* Body */}
-      {!collapsed&&(
-        <div style={{padding:"14px 18px 18px"}}>
-          {/* Today's bosses */}
-          <div style={{fontSize:10,fontWeight:700,color:"#fbbf24",letterSpacing:"0.1em",marginBottom:8,textTransform:"uppercase"}}>
-            {DAY_LABELS[todayUTC8]} — Today
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:16}}>
-            {todayBosses.length === 0 && (
-              <div style={{color:"#3d5070",fontSize:12,padding:"10px 0"}}>No bosses scheduled today.</div>
-            )}
-            {todayBosses.map((b,i)=>{
-              const cd = getCountdown(b);
-              const [bh, bm] = b.time.split(":").map(Number);
-              const passed = nowMins >= bh*60+bm;
-              return (
-                <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:cd?.active?"rgba(251,191,36,0.1)":cd?.soon?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.025)",border:`1px solid ${cd?.active?"rgba(251,191,36,0.4)":cd?.soon?"rgba(251,191,36,0.2)":"rgba(255,255,255,0.06)"}`,borderRadius:10,padding:"9px 13px",transition:"all 0.3s"}}>
-                  <div style={{width:6,height:6,borderRadius:"50%",background:passed?"#475569":cd?.active?"#fbbf24":"#34d399",boxShadow:cd?.active?"0 0 8px #fbbf24":passed?"none":"0 0 6px #34d399",flexShrink:0}} />
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12,fontWeight:700,color:"#e2e8f0",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.boss}</div>
-                    <div style={{fontSize:10,color:"#3d5070",marginTop:1}}>{b.map} · {b.ch}</div>
-                  </div>
-                  <div style={{textAlign:"right",flexShrink:0}}>
-                    <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:13,fontWeight:700,color:"#fbbf24"}}>{b.time}</div>
-                    {cd ? (
-                      <div style={{fontSize:9.5,color:cd.active?"#fbbf24":cd.soon?"#fb923c":"#34d399",fontWeight:700}}>{cd.active?"⚠️ SOON ":""}{cd.label}</div>
-                    ) : (
-                      <div style={{fontSize:9.5,color:passed?"#475569":"#3d5070"}}>{passed?"✓ Done":""}</div>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Other days — compact */}
-          <div style={{fontSize:10,fontWeight:700,color:"#3d5070",letterSpacing:"0.1em",marginBottom:8,textTransform:"uppercase"}}>Other Days</div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:6}}>
-            {otherBosses.map((b,i)=>(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,padding:"7px 11px"}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.boss}</div>
-                  <div style={{fontSize:9.5,color:"#3d5070",marginTop:1}}>{b.map}</div>
-                </div>
-                <div style={{textAlign:"right",flexShrink:0}}>
-                  <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:12,color:"#64748b"}}>{b.time}</div>
-                  <div style={{fontSize:9,color:"#2d3a52"}}>{b.days.map(d=>DAY_LABELS[d]).join(" · ")}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div style={{marginTop:12,padding:"8px 12px",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,fontSize:10.5,color:"#3d5070",lineHeight:1.6}}>
-            ⚠️ Bosses appear <strong style={{color:"#94a3b8"}}>once per day</strong> — timer cannot be changed after boss appears. Only conquerors may change respawn time (once/week, resets Tue 5AM UTC+8). Cannot be set between <strong style={{color:"#94a3b8"}}>10:30PM – 11:59PM</strong>.
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Nidavellir Region Maps Panel ─────────────────────────────────────────────
-// Nidavellir is the whole continent — these are its accessible regions/zones.
-const OVERWORLD_MAPS = [
-  {
-    id:"myrkrheim", name:"MYRKRHEIM", type:"Open World", channels:"Unlimited",
-    status:"LIVE", border:"#3b82f6", glow:"rgba(59,130,246,0.18)", icon:"🏰", tag:"open-world",
-    level:"Lv. 55 – 70", desc:"Central hub city of Nidavellir",
-  },
-  {
-    id:"canyon", name:"CANYON OF NIDAVELLIR", type:"Inter-Server", channels:"Shared",
-    status:"LIVE", border:"#ef4444", glow:"rgba(239,68,68,0.18)", icon:"🏜️", tag:"inter-server",
-    level:"Lv. 60 – 70", desc:"Inter-server PvP canyon zone",
-  },
-  {
-    id:"lindwurm", name:"LINDWURM CAVE", type:"Open World", channels:"Unlimited",
-    status:"LIVE", border:"#3b82f6", glow:"rgba(59,130,246,0.18)", icon:"🦎", tag:"open-world",
-    level:"Lv. 65 – 80", desc:"Req [Main] 26-2 · Cave hunting zone",
-  },
-  {
-    id:"kingstomb", name:"KING'S TOMB", type:"Open World", channels:"Unlimited",
-    status:"LIVE", border:"#3b82f6", glow:"rgba(59,130,246,0.18)", icon:"⚰️", tag:"open-world",
-    level:"Lv. 60 – 70", desc:"Ruined tomb region, south Nidavellir",
-  },
-  {
-    id:"hilders", name:"HILDER'S LABYRINTH", type:"Inter-Server", channels:"Shared",
-    status:"LIVE", border:"#ef4444", glow:"rgba(239,68,68,0.18)", icon:"🌀", tag:"inter-server",
-    level:"Lv. 70 – 80", desc:"Inter-server labyrinth dungeon area",
-  },
-  {
-    id:"twisted", name:"TWISTED PLATEAU", type:"Open World", channels:"Unlimited",
-    status:"LIVE", border:"#3b82f6", glow:"rgba(59,130,246,0.18)", icon:"🗻", tag:"open-world",
-    level:"Lv. 80 – 90", desc:"High-level eastern plateau zone",
-  },
-];
-
-const MAP_TYPE_BADGE = {
-  "Open World":    { bg:"rgba(59,130,246,0.18)",  color:"#60a5fa",  border:"rgba(59,130,246,0.4)"  },
-  "Inter-Server":  { bg:"rgba(239,68,68,0.18)",   color:"#f87171",  border:"rgba(239,68,68,0.4)"   },
-  "Dungeon":       { bg:"rgba(245,158,11,0.18)",   color:"#fbbf24",  border:"rgba(245,158,11,0.4)"  },
-  "Normal":        { bg:"rgba(52,211,153,0.14)",   color:"#34d399",  border:"rgba(52,211,153,0.35)" },
-};
-const CH_BADGE = {
-  "Unlimited": { bg:"rgba(6,182,212,0.15)",  color:"#22d3ee",  border:"rgba(6,182,212,0.35)"  },
-  "Shared":    { bg:"rgba(239,68,68,0.15)",  color:"#f87171",  border:"rgba(239,68,68,0.35)"  },
-};
-
-function MapTypeBadge({ type }) {
-  const s = MAP_TYPE_BADGE[type] || MAP_TYPE_BADGE["Open World"];
-  return (
-    <span style={{display:"inline-flex",alignItems:"center",padding:"3px 9px",borderRadius:6,background:s.bg,color:s.color,border:`1px solid ${s.border}`,fontSize:10,fontWeight:700,letterSpacing:"0.06em"}}>{type}</span>
-  );
-}
-
-function OverworldMapsPanel({ canManage }) {
-  const [expandedMap, setExpandedMap] = useState(null);
-  const [mapStatuses, setMapStatuses] = useState(()=>{
-    const o={};
-    OVERWORLD_MAPS.forEach(m=>{o[m.id]="LIVE";});
-    return o;
-  });
-
-  const glowByTag = { "open-world":"0 0 30px rgba(59,130,246,0.18)", "inter-server":"0 0 30px rgba(239,68,68,0.15)" };
-
-  return (
-    <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"18px 20px",marginBottom:22}}>
-      {/* Header */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
-        <div>
-          <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.06em"}}>🗺️ NIDAVELLIR — REGIONS</div>
-          <div style={{fontSize:11,color:"#3d5070",marginTop:2}}>All accessible zones across the Nidavellir continent</div>
-        </div>
-        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-          {[["Open World","#60a5fa"],["Inter-Server","#f87171"],["Channels","#22d3ee"]].map(([lbl,c])=>(
-            <span key={lbl} style={{fontSize:10,color:c,background:`${c}18`,border:`1px solid ${c}35`,borderRadius:5,padding:"2px 8px",fontWeight:700,letterSpacing:"0.06em"}}>{lbl}</span>
-          ))}
-        </div>
-      </div>
-
-      {/* Map Cards Grid */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:12}}>
-        {OVERWORLD_MAPS.map(map=>{
-          const status = mapStatuses[map.id] || "LIVE";
-          const isLive = status === "LIVE";
-          const isExpanded = expandedMap === map.id;
-          const typeBadge = MAP_TYPE_BADGE[map.type] || MAP_TYPE_BADGE["Open World"];
-          const chBadge = CH_BADGE[map.channels] || CH_BADGE["Unlimited"];
-          return (
-            <div key={map.id}
-              style={{
-                background:"rgba(255,255,255,0.03)",
-                border:`1px solid ${map.border}40`,
-                borderRadius:14,
-                padding:"14px 16px",
-                position:"relative",
-                overflow:"hidden",
-                boxShadow:glowByTag[map.tag],
-                transition:"all 0.22s",
-                cursor:"pointer",
-              }}
-              onClick={()=>setExpandedMap(isExpanded ? null : map.id)}
-            >
-              {/* Left color strip */}
-              <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:map.border,borderRadius:"3px 0 0 3px"}} />
-              {/* Glow bg blob */}
-              <div style={{position:"absolute",bottom:-20,right:-20,width:80,height:80,borderRadius:"50%",background:map.glow,filter:"blur(20px)",pointerEvents:"none"}} />
-
-              {/* Map name + icon */}
-              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:10}}>
-                <div>
-                  <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
-                    <span style={{fontSize:16}}>{map.icon}</span>
-                    <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,color:"#f1f5f9",letterSpacing:"0.05em"}}>{map.name}</span>
-                  </div>
-                  <div style={{fontSize:10,color:"#3d5070",marginLeft:23}}>{map.desc}</div>
-                  {map.level && <div style={{fontSize:9.5,color:"#fbbf24",marginLeft:23,marginTop:2,fontWeight:700,letterSpacing:"0.04em"}}>{map.level}</div>}
-                </div>
-                {/* Status dot + LIVE badge */}
-                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,flexShrink:0}}>
-                  <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px",borderRadius:6,background:isLive?"rgba(52,211,153,0.15)":"rgba(100,116,139,0.15)",border:`1px solid ${isLive?"rgba(52,211,153,0.4)":"rgba(100,116,139,0.3)"}`,fontSize:9.5,fontWeight:700,color:isLive?"#34d399":"#64748b",letterSpacing:"0.07em"}}>
-                    <span style={{width:5,height:5,borderRadius:"50%",background:isLive?"#34d399":"#475569",flexShrink:0,boxShadow:isLive?"0 0 6px #34d399":"none"}} />
-                    {status}
-                  </span>
-                </div>
-              </div>
-
-              {/* Type + Channel badges */}
-              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-                <MapTypeBadge type={map.type} />
-                <span style={{display:"inline-flex",alignItems:"center",padding:"3px 9px",borderRadius:6,background:chBadge.bg,color:chBadge.color,border:`1px solid ${chBadge.border}`,fontSize:10,fontWeight:700,letterSpacing:"0.06em"}}>
-                  CH: {map.channels}
-                </span>
-              </div>
-
-              {/* Action row — always visible on expand, hover otherwise */}
-              {canManage && (
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",borderTop:"1px solid rgba(255,255,255,0.05)",paddingTop:8,marginTop:2}}>
-                  {["LIVE","MAINTENANCE","CLOSED"].map(s=>(
-                    <button key={s}
-                      onClick={e=>{e.stopPropagation();setMapStatuses(prev=>({...prev,[map.id]:s}));}}
-                      style={{
-                        fontSize:9,fontWeight:700,letterSpacing:"0.05em",
-                        padding:"3px 8px",borderRadius:5,cursor:"pointer",fontFamily:"'Exo 2',sans-serif",
-                        background:status===s?(s==="LIVE"?"rgba(52,211,153,0.2)":s==="MAINTENANCE"?"rgba(251,191,36,0.2)":"rgba(239,68,68,0.2)"):"rgba(255,255,255,0.04)",
-                        border:`1px solid ${status===s?(s==="LIVE"?"rgba(52,211,153,0.45)":s==="MAINTENANCE"?"rgba(251,191,36,0.45)":"rgba(239,68,68,0.45)"):"rgba(255,255,255,0.1)"}`,
-                        color:status===s?(s==="LIVE"?"#34d399":s==="MAINTENANCE"?"#fbbf24":"#f87171"):"#3d5070",
-                        transition:"all 0.15s",
-                      }}>
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── Folkvang / Valhalla Dungeon Card (expandable, floors + modes) ─────────────
-function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, killFlash, onKill, onReset, onSetTimer, onImage }) {
-  const [expandedMode, setExpandedMode] = useState("interserver"); // "interserver" | "normal" | null
-  const [collapsed, setCollapsed] = useState(false);
-
-  const modes = [
-    { key:"interserver", label:"INTER-SERVER", color:"#f87171", border:"rgba(248,113,113,0.35)", bg:"rgba(248,113,113,0.08)", bosses:folkvangInterserver },
-    { key:"normal",      label:"NORMAL",       color:"#f97316", border:"rgba(249,115,22,0.35)",  bg:"rgba(249,115,22,0.08)",  bosses:folkvangNormal },
-  ];
-
-  const allBosses = [...folkvangNormal, ...folkvangInterserver];
-  const liveCount = allBosses.filter(b=>b.secs===0).length;
-  const totalCount = allBosses.length;
-
-  return (
-    <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(245,158,11,0.35)",borderRadius:18,overflow:"hidden",marginBottom:22,boxShadow:"0 0 40px rgba(245,158,11,0.06)"}}>
-      {/* Header */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:collapsed?"none":"1px solid rgba(255,255,255,0.06)",cursor:"pointer",background:"rgba(245,158,11,0.04)"}}
-        onClick={()=>setCollapsed(p=>!p)}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:40,height:40,borderRadius:10,background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.35)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>🏔️</div>
-          <div>
-            <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:"#fbbf24",letterSpacing:"0.06em"}}>FOLKVANG · VALHALLA DUNGEON</div>
-            <div style={{fontSize:10.5,color:"#3d5070",marginTop:2}}>5 Floors · Normal + Inter-Server · Respawn ~1h45m</div>
-          </div>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            <MapTypeBadge type="Dungeon" />
-            <span style={{fontSize:9.5,padding:"3px 9px",borderRadius:6,background:"rgba(52,211,153,0.13)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",fontWeight:700,letterSpacing:"0.06em"}}>{liveCount}/{totalCount} LIVE</span>
-          </div>
-          <span style={{color:"#3d5070",fontSize:14,transition:"transform 0.2s",display:"inline-block",transform:collapsed?"rotate(0deg)":"rotate(180deg)"}}>▾</span>
-        </div>
-      </div>
-
-      {!collapsed && (
-        <div style={{padding:"16px 20px"}}>
-          {/* Mode tabs */}
-          <div style={{display:"flex",gap:8,marginBottom:14}}>
-            {modes.map(mode=>(
-              <button key={mode.key}
-                onClick={()=>setExpandedMode(expandedMode===mode.key?null:mode.key)}
-                style={{
-                  display:"flex",alignItems:"center",gap:7,
-                  padding:"7px 16px",borderRadius:9,cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:11.5,letterSpacing:"0.05em",
-                  background:expandedMode===mode.key?mode.bg:"rgba(255,255,255,0.04)",
-                  border:`1px solid ${expandedMode===mode.key?mode.border:"rgba(255,255,255,0.1)"}`,
-                  color:expandedMode===mode.key?mode.color:"#3d5070",
-                  transition:"all 0.18s",
-                }}>
-                <span style={{width:7,height:7,borderRadius:"50%",background:expandedMode===mode.key?mode.color:"#3d5070",flexShrink:0}} />
-                {mode.label}
-                <span style={{fontSize:9,opacity:0.7,fontWeight:400}}>5F</span>
-              </button>
-            ))}
-          </div>
-
-          {/* Floor rows per active mode */}
-          {modes.map(mode=>{
-            if(expandedMode !== mode.key) return null;
-            return (
-              <div key={mode.key} style={{background:"rgba(255,255,255,0.02)",borderRadius:12,border:`1px solid ${mode.border}`,overflow:"hidden"}}>
-                <div style={{background:mode.bg,padding:"8px 16px",borderBottom:`1px solid ${mode.border}`,display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:11,fontWeight:700,color:mode.color,letterSpacing:"0.07em"}}>{mode.label}</span>
-                  <span style={{fontSize:10,color:"#3d5070"}}>· 5 Floors</span>
-                </div>
-                {mode.bosses.map((b,idx)=>{
-                  const st = bossStatus(b.secs);
-                  const bs = BOSS_STATUS_STYLE[st];
-                  const isLive = b.secs === 0;
-                  return (
-                    <div key={b.id} style={{
-                      display:"flex",alignItems:"center",gap:10,padding:"11px 16px",
-                      borderBottom:idx<mode.bosses.length-1?`1px solid rgba(255,255,255,0.04)`:"none",
-                      background:killFlash===b.id?"rgba(239,68,68,0.15)":"transparent",
-                      transition:"background 0.3s",
-                    }}>
-                      {/* Floor label */}
-                      <div style={{width:32,flexShrink:0,fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,color:mode.color,textAlign:"center"}}>{b.floor}</div>
-                      {/* Status dot */}
-                      <div style={{width:8,height:8,borderRadius:"50%",background:isLive?"#34d399":"#f59e0b",boxShadow:isLive?"0 0 8px #34d399":"0 0 8px #f59e0b",flexShrink:0}} />
-                      {/* Timer */}
-                      <div style={{flex:1}}>
-                        <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:20,fontWeight:700,color:isLive?"#34d399":mode.color,letterSpacing:"0.04em"}}>{fmtSecs(b.secs)}</span>
-                        {isLive && b.elapsed>0 && <span style={{fontSize:9.5,color:"#34d399",marginLeft:8}}>+{fmtSecs(b.elapsed)}</span>}
-                      </div>
-                      {/* Status badge */}
-                      <span style={{display:"inline-flex",padding:"2px 8px",borderRadius:5,background:bs.bg,color:bs.color,border:`1px solid ${bs.border}`,fontSize:9.5,fontWeight:700,flexShrink:0}}>{st}</span>
-                      {/* Action buttons */}
-                      {canManage && (
-                        <div style={{display:"flex",gap:5,flexShrink:0}}>
-                          <button className="ghost-btn" onClick={()=>onKill(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                            style={{fontSize:9.5,padding:"3px 8px",color:mode.color,borderColor:`${mode.color}40`}}>☠️ Kill</button>
-                          <button className="ghost-btn" onClick={()=>onReset(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                            style={{fontSize:9.5,padding:"3px 8px"}}>🔴 Live</button>
-                          <button className="ghost-btn" onClick={()=>onSetTimer(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                            style={{fontSize:9.5,padding:"3px 8px"}}>⏱</button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Boss Group Panel (full page) ─────────────────────────────────────────────
 function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, killFlash, onKill, onReset, onSetTimer, onImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels }) {
+  // Group bosses by unique name
   const bossNames = [...new Set(bosses.map(b=>b.name))];
-  const [editRespawn, setEditRespawn] = useState(null);
-  const [collapsed, setCollapsed] = useState(false);
-  const liveCount = bosses.filter(b=>b.secs===0).length;
+  const [editRespawn, setEditRespawn] = useState(null); // {id, val}
 
   return(
-    <div style={{background:"rgba(255,255,255,0.02)",border:`1px solid ${color}35`,borderRadius:18,overflow:"hidden",marginBottom:22,boxShadow:`0 0 30px ${color}08`}}>
-      {/* Header — same style as Folkvang */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:collapsed?"none":`1px solid ${color}20`,cursor:"pointer",background:`${color}05`}}
-        onClick={()=>setCollapsed(p=>!p)}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:15,fontWeight:700,color,letterSpacing:"0.06em"}}>{title}</div>
-          <div style={{fontSize:10,color:"#3d5070",marginTop:1}}>{subtitle}</div>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-          <span style={{fontSize:9.5,padding:"3px 9px",borderRadius:6,background:"rgba(52,211,153,0.13)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",fontWeight:700,letterSpacing:"0.06em"}}>{liveCount}/{bosses.length} LIVE</span>
-          <span style={{color:"#3d5070",fontSize:14,transition:"transform 0.2s",display:"inline-block",transform:collapsed?"rotate(0deg)":"rotate(180deg)"}}>▾</span>
+    <div style={{background:"rgba(255,255,255,0.02)",border:`1px solid ${color}30`,borderRadius:18,padding:"18px 20px",marginBottom:22}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+        <div>
+          <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color,letterSpacing:"0.04em"}}>{title}</div>
+          <div style={{fontSize:11,color:"#3d5070",marginTop:2}}>{subtitle}</div>
         </div>
       </div>
-
-      {!collapsed && (
-        <div style={{padding:"14px 18px"}}>
-          {bossNames.map(bossName=>{
-            const bossChannels = bosses.filter(b=>b.name===bossName);
-            const templateBoss = bossChannels[0];
-            return(
-              <div key={bossName} style={{marginBottom:16}}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                  <div style={{fontSize:12,fontWeight:700,color:"#94a3b8",letterSpacing:"0.04em"}}>
-                    {floorLabels ? `${templateBoss.floor} · ${bossName}` : bossName}
-                  </div>
-                  {canManage&&onAddChannel&&(
-                    <button className="ghost-btn" onClick={()=>onAddChannel(bossName, templateBoss.color)}
-                      style={{fontSize:10,padding:"3px 8px",color:"#60a5fa",borderColor:"rgba(96,165,250,0.3)"}}>
-                      ➕ CH
-                    </button>
-                  )}
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:10}}>
-                  {bossChannels.map(b=>{
-                    const st=bossStatus(b.secs);
-                    const bs=BOSS_STATUS_STYLE[st];
-                    return(
-                      <div key={b.id} className={`boss-card${killFlash===b.id?" kill-flash":""}`}
-                        style={{background:"rgba(255,255,255,0.03)",border:`1px solid rgba(255,255,255,0.07)`,borderRadius:13,padding:"12px 14px",position:"relative",overflow:"hidden"}}>
-                        <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:b.color,borderRadius:"3px 0 0 3px"}} />
-
-                        {/* Compact top row: image + info + status */}
-                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-                          {/* Boss image — 78x78, clickable to upload */}
-                          <div className="boss-img-upload" onClick={()=>canManage&&onImage(b.id)}
-                            style={{width:46,height:46,borderRadius:10,background:b.color+"22",border:`2px solid ${b.color}44`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0,position:"relative",cursor:canManage?"pointer":"default"}}>
-                            {b.image ? <img src={b.image} alt={b.name} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span style={{fontSize:20}}>👹</span>}
-                            {canManage&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",fontSize:12}} className="boss-img-ov">📷</div>}
-                          </div>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:11.5,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>CH {b.channel}</div>
-                            <span style={{display:"inline-flex",alignItems:"center",padding:"2px 7px",borderRadius:5,background:bs.bg,color:bs.color,border:`1px solid ${bs.border}`,fontSize:9.5,fontWeight:700,marginTop:2}}>{st}</span>
-                          </div>
-                          {/* Big timer */}
-                          <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:28,fontWeight:700,color:b.color,letterSpacing:"0.04em",lineHeight:1,flexShrink:0,textAlign:"right"}}>
-                            {fmtSecs(b.secs)}
-                          </div>
-                          {canManage&&onRemoveChannel&&bossChannels.length>1&&(
-                            <button onClick={()=>onRemoveChannel(b.id)} style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.2)",color:"#f87171",borderRadius:6,padding:"3px 6px",cursor:"pointer",fontSize:10,fontFamily:"'Exo 2',sans-serif",fontWeight:700,flexShrink:0}}>✕</button>
-                          )}
-                        </div>
-
-                        {b.secs===0&&b.elapsed>0&&(
-                          <div style={{textAlign:"center",fontSize:10,color:"#34d399",marginBottom:6}}>⏱ Alive for {fmtSecs(b.elapsed)}</div>
-                        )}
-
-                        {/* Respawn time display */}
-                        {showRespawnEdit&&b.respawnSecs!=null&&(
-                          <div style={{background:"rgba(255,255,255,0.03)",borderRadius:7,padding:"4px 8px",marginBottom:7,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                            <span style={{fontSize:9.5,color:"#3d5070"}}>Respawn: {String(Math.floor((b.respawnSecs||0)/3600)).padStart(2,"0")}:{String(Math.floor(((b.respawnSecs||0)%3600)/60)).padStart(2,"0")}:{String((b.respawnSecs||0)%60).padStart(2,"0")}</span>
-                            {canManage&&(
-                              <button onClick={()=>setEditRespawn({id:b.id,val:b.respawnSecs})}
-                                style={{fontSize:9,color:"#60a5fa",background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:4,padding:"1px 6px",cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:600}}>✏️</button>
-                            )}
-                          </div>
-                        )}
-
-                        {editRespawn?.id===b.id&&(
-                          <RespawnEditor current={editRespawn.val} onSave={(secs)=>{onRespawnEdit(b.id,secs);setEditRespawn(null);}} onCancel={()=>setEditRespawn(null)} />
-                        )}
-
-                        {canManage&&<>
-                          <button className="kill-btn" onClick={()=>onKill(b.id)} style={{background:`${b.color}20`,border:`1px solid ${b.color}45`,color:b.color,marginBottom:6,width:"100%",fontSize:11,padding:"7px"}}>
-                            ☠️ Mark Killed
-                          </button>
-                          <div style={{display:"flex",gap:6}}>
-                            <button className="ghost-btn" onClick={()=>onReset(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>🔴 LIVE</button>
-                            <button className="ghost-btn" onClick={()=>onSetTimer(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>⏱ Timer</button>
-                          </div>
-                        </>}
-                        {!canManage&&<div style={{textAlign:"center",color:"#3d5070",fontSize:9.5,marginTop:4,display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>👀 View only</div>}
-                      </div>
-                    );
-                  })}
-                </div>
+      {bossNames.map(bossName=>{
+        const bossChannels = bosses.filter(b=>b.name===bossName);
+        const templateBoss = bossChannels[0];
+        return(
+          <div key={bossName} style={{marginBottom:18}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+              <div style={{fontSize:13,fontWeight:700,color:"#94a3b8",letterSpacing:"0.04em"}}>
+                {floorLabels ? `${templateBoss.floor} · ${bossName}` : bossName}
               </div>
-            );
-          })}
-        </div>
-      )}
+              {canManage&&onAddChannel&&(
+                <button className="ghost-btn" onClick={()=>onAddChannel(bossName, templateBoss.color)}
+                  style={{fontSize:10,padding:"4px 10px",color:"#60a5fa",borderColor:"rgba(96,165,250,0.3)"}}>
+                  ➕ Add Channel
+                </button>
+              )}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+              {bossChannels.map(b=>{
+                const st=bossStatus(b.secs);
+                const bs=BOSS_STATUS_STYLE[st];
+                const respH=Math.floor((b.respawnSecs||0)/3600),respM=Math.floor(((b.respawnSecs||0)%3600)/60),respS=(b.respawnSecs||0)%60;
+                return(
+                  <div key={b.id} className={`boss-card${killFlash===b.id?" kill-flash":""}`}
+                    style={{background:"rgba(255,255,255,0.03)",border:`1px solid rgba(255,255,255,0.07)`,borderRadius:16,padding:"16px",position:"relative",overflow:"hidden"}}>
+                    <div style={{position:"absolute",left:0,top:0,bottom:0,width:4,background:b.color,borderRadius:"4px 0 0 4px"}} />
+
+                    <div style={{display:"flex",alignItems:"center",gap:11,marginBottom:10}}>
+                      <div className="boss-img-upload" onClick={()=>canManage&&onImage(b.id)}
+                        style={{width:78,height:78,borderRadius:12,background:b.color+"22",border:`2px solid ${b.color}44`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0,position:"relative",cursor:canManage?"pointer":"default"}}>
+                        {b.image ? <img src={b.image} alt={b.name} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span style={{fontSize:28}}>👹</span>}
+                        {canManage&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s"}} className="boss-img-ov"><span style={{fontSize:16}}>📷</span></div>}
+                      </div>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.02em"}}>{b.name}</div>
+                        <div style={{fontSize:10.5,color:"#3d5070",marginTop:2}}>Channel {b.channel}</div>
+                        <span style={{display:"inline-flex",alignItems:"center",padding:"2px 8px",borderRadius:6,background:bs.bg,color:bs.color,border:`1px solid ${bs.border}`,fontSize:10,fontWeight:700,marginTop:4}}>{st}</span>
+                      </div>
+                      {canManage&&onRemoveChannel&&bossChannels.length>1&&(
+                        <button onClick={()=>onRemoveChannel(b.id)} style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.2)",color:"#f87171",borderRadius:7,padding:"4px 8px",cursor:"pointer",fontSize:11,fontFamily:"'Exo 2',sans-serif",fontWeight:700,flexShrink:0}}>✕</button>
+                      )}
+                    </div>
+
+                    {/* Big timer */}
+                    <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:42,fontWeight:700,color:b.color,letterSpacing:"0.06em",lineHeight:1,textAlign:"center",marginBottom:4}}>
+                      {fmtSecs(b.secs)}
+                    </div>
+                    {b.secs===0&&b.elapsed>0&&(
+                      <div style={{textAlign:"center",fontSize:10.5,color:"#34d399",marginBottom:8}}>
+                        ⏱ Alive for {fmtSecs(b.elapsed)}
+                      </div>
+                    )}
+                    {b.secs===0&&!b.elapsed&&<div style={{marginBottom:8}} />}
+
+                    {/* Respawn time display + edit */}
+                    {showRespawnEdit&&b.respawnSecs!=null&&(
+                      <div style={{background:"rgba(255,255,255,0.03)",borderRadius:8,padding:"6px 10px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                        <span style={{fontSize:10,color:"#3d5070"}}>Respawn: {String(respH).padStart(2,"0")}:{String(respM).padStart(2,"0")}:{String(respS).padStart(2,"0")}</span>
+                        {canManage&&(
+                          <button onClick={()=>setEditRespawn({id:b.id,val:b.respawnSecs})}
+                            style={{fontSize:9.5,color:"#60a5fa",background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:5,padding:"2px 7px",cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:600}}>✏️ Edit</button>
+                        )}
+                      </div>
+                    )}
+
+                    {editRespawn?.id===b.id&&(
+                      <RespawnEditor current={editRespawn.val} onSave={(secs)=>{onRespawnEdit(b.id,secs);setEditRespawn(null);}} onCancel={()=>setEditRespawn(null)} />
+                    )}
+
+                    {canManage&&<>
+                      <button className="kill-btn" onClick={()=>onKill(b.id)} style={{background:`${b.color}20`,border:`1px solid ${b.color}45`,color:b.color,marginBottom:8,width:"100%"}}>
+                        ☠️ Mark Killed — start respawn
+                      </button>
+                      <div style={{display:"flex",gap:8}}>
+                        <button className="ghost-btn" onClick={()=>onReset(b.id)} style={{flex:1,fontSize:10.5,padding:"6px"}}>🔴 Set LIVE</button>
+                        <button className="ghost-btn" onClick={()=>onSetTimer(b.id)} style={{flex:1,fontSize:10.5,padding:"6px"}}>⏱ Set Timer</button>
+                      </div>
+                    </>}
+                    {!canManage&&<div style={{textAlign:"center",color:"#3d5070",fontSize:10.5,marginTop:4}}>👀 View only</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
