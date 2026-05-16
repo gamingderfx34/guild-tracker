@@ -629,31 +629,44 @@ export default function App() {
     showToast("🗑️ Channel removed","warn");
   };
 
-  // Update boss image for any group — uploads to Supabase storage if possible, falls back to base64
+  // Update boss image for any group — uploads to Supabase storage boss-images bucket
   const handleBossImageUploadGroup = async (file, id, group)=>{
     if (!file || !id || !group) return;
-    // Try Supabase storage upload (78x78 bucket)
+    showToast("⏳ Uploading image...","info");
     try {
       const ext = file.name.split('.').pop() || 'png';
-      const path = `boss-icons/${group}_${id}_${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage.from('asset').upload(path, file, { upsert: true, contentType: file.type });
-      if (!upErr) {
-        const { data: urlData } = supabase.storage.from('asset').getPublicUrl(path);
-        const publicUrl = urlData?.publicUrl;
-        if (publicUrl) {
-          getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:publicUrl}:b));
-          setBossImageModal(null); showToast("🖼️ Boss image uploaded to Supabase!");
-          return;
-        }
+      const path = `${group}_${id}_${Date.now()}.${ext}`;
+      const { data, error: upErr } = await supabase.storage
+        .from('boss-images')
+        .upload(path, file, { upsert: true, contentType: file.type });
+      if (upErr) {
+        console.error("Supabase upload error:", upErr);
+        showToast(`❌ Upload failed: ${upErr.message}`,"error");
+        // Fallback: base64
+        const reader = new FileReader();
+        reader.onload = ev=>{
+          getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:ev.target.result}:b));
+          setBossImageModal(null); showToast("🖼️ Saved locally (Supabase failed)","warn");
+        };
+        reader.readAsDataURL(file);
+        return;
       }
-    } catch {}
-    // Fallback: base64
-    const reader = new FileReader();
-    reader.onload = ev=>{
-      getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:ev.target.result}:b));
-      setBossImageModal(null); showToast("🖼️ Boss image updated (local)!");
-    };
-    reader.readAsDataURL(file);
+      const { data: urlData } = supabase.storage.from('boss-images').getPublicUrl(path);
+      const publicUrl = urlData?.publicUrl;
+      if (publicUrl) {
+        getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:publicUrl}:b));
+        setBossImageModal(null); showToast("🖼️ Boss image uploaded!");
+      }
+    } catch(e) {
+      console.error("Upload exception:", e);
+      // Fallback: base64
+      const reader = new FileReader();
+      reader.onload = ev=>{
+        getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:ev.target.result}:b));
+        setBossImageModal(null); showToast("🖼️ Saved locally","warn");
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   // ── Members ───────────────────────────────────────────────────────────────
