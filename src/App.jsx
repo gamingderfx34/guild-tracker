@@ -7,11 +7,10 @@ const SUPABASE_URL = "https://mbalsusqtkbtoxuawjau.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_174MDqsta2KNe3orpEN8Ww_0yzhHYaM"; // <-- replace this
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ── Admin email (app creator/maintainer) ─────────────────────────────────────
-const ADMIN_EMAIL = ""; // Set this to your email to show "Admin" role label
+// ── Role display ─────────────────────────────────────────────────────────────
+// "Admin" is stored as role="Admin" in the members table (set manually in Supabase)
 function displayRole(user) {
   if (!user) return "";
-  if (ADMIN_EMAIL && user.email === ADMIN_EMAIL) return "Admin";
   return user.role || "Recruit";
 }
 
@@ -115,6 +114,7 @@ const NAV = [
 ];
 
 const ROLE_STYLE = {
+  Admin:   { bg:"rgba(239,68,68,0.18)",   color:"#f87171", border:"rgba(239,68,68,0.45)"   },
   Leader:  { bg:"rgba(251,191,36,0.15)",  color:"#fbbf24", border:"rgba(251,191,36,0.35)"  },
   Elder:   { bg:"rgba(96,165,250,0.15)",  color:"#60a5fa", border:"rgba(96,165,250,0.35)"  },
   Member:  { bg:"rgba(148,163,184,0.1)",  color:"#94a3b8", border:"rgba(148,163,184,0.25)" },
@@ -139,7 +139,8 @@ const BOSS_STATUS_STYLE = {
   Waiting:    { bg:"rgba(96,165,250,0.15)",  color:"#60a5fa", border:"rgba(96,165,250,0.35)"  },
 };
 
-const CAN_MANAGE = (role) => ["Leader","Elder"].includes(role);
+const CAN_MANAGE = (role) => ["Admin","Leader","Elder"].includes(role);
+const ASSIGNABLE_ROLES = ["Leader","Elder","Member","Recruit"];
 const MAX_ELDERS = 8;
 
 function fmtSecs(s) {
@@ -294,21 +295,18 @@ export default function App() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user && mounted) {
-          // session.user.email is the normalized @rampageguild.gg form; look up by both
           const authMail = session.user.email;
           let profile = null;
-          const { data: p1 } = await supabase.from("members").select("*").eq("email", authMail).single();
+          // Look up by user id first (most reliable)
+          const { data: p1 } = await supabase.from("members").select("*").eq("id", session.user.id).single();
           if (p1) { profile = p1; }
           else {
-            // Try the guild email (strip @rampageguild.gg and search by name prefix)
-            const prefix = authMail.split("@")[0];
-            const { data: p2 } = await supabase.from("members").select("*").ilike("email", `${prefix}@%`).single();
+            const { data: p2 } = await supabase.from("members").select("*").eq("email", authMail).single();
             if (p2) profile = p2;
           }
           const role = profile?.role || "Recruit";
           const name = profile?.name || authMail.split("@")[0].toUpperCase();
-          const displayEmail = profile?.email || authMail;
-          setCurrentUser({ id: session.user.id, email: displayEmail, role, name, points: profile?.points || 0 });
+          setCurrentUser({ id: session.user.id, email: authMail, role, name, points: profile?.points || 0 });
         }
       } catch {}
       if(mounted) setSessionRestored(true);
@@ -416,33 +414,24 @@ export default function App() {
   // ── Auth ──────────────────────────────────────────────────────────────────
   const handleLogin = async()=>{
     setAuthLoading(true); setAuthError("");
-    const rawEmail = loginForm.email.trim().toLowerCase();
-    // Normalize: if user types nokia232@rampage.gg, we stored it as nokia232@rampageguild.gg in Supabase auth
-    const authEmail = rawEmail.includes("@")
-      ? rawEmail.replace(/@.+$/, "@rampageguild.gg")
-      : `${rawEmail}@rampageguild.gg`;
+    const email = loginForm.email.trim().toLowerCase();
+    if (!email || !loginForm.password) { setAuthError("Email and password are required."); setAuthLoading(false); return; }
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email: authEmail, password: loginForm.password });
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password: loginForm.password });
       if (error) { setAuthError(error.message); setAuthLoading(false); return; }
-      // Look up profile by guild email (original) OR auth email
+      // Look up member profile by auth user id first, then by email
       let profile = null;
-      const { data: p1 } = await supabase.from("members").select("*").eq("email", rawEmail).single();
+      const { data: p1 } = await supabase.from("members").select("*").eq("id", data.user.id).single();
       if (p1) { profile = p1; }
       else {
-        const { data: p2 } = await supabase.from("members").select("*").eq("email", authEmail).single();
+        const { data: p2 } = await supabase.from("members").select("*").eq("email", email).single();
         if (p2) profile = p2;
       }
       const role = profile?.role || "Recruit";
-      const name = profile?.name || rawEmail.split("@")[0].toUpperCase();
-      setCurrentUser({ id: data.user.id, email: rawEmail, role, name, points: profile?.points || 0 });
+      const name = profile?.name || email.split("@")[0].toUpperCase();
+      setCurrentUser({ id: data.user.id, email, role, name, points: profile?.points || 0 });
     } catch(e) {
-      const local = lsGet("rampageMembers",[]);
-      const found = local.find(m=>m.email===rawEmail || m.email===authEmail);
-      if (found && loginForm.password.length >= 6) {
-        setCurrentUser({id:found.id, email:found.email, role:found.role, name:found.name, points:found.points||0});
-      } else {
-        setAuthError("Invalid credentials. Check your email and password.");
-      }
+      setAuthError("Login failed. Please check your connection and try again.");
     }
     setAuthLoading(false);
   };
@@ -450,59 +439,69 @@ export default function App() {
   const handleRegister = async()=>{
     setAuthLoading(true); setAuthError("");
     if (!regForm.name.trim()) { setAuthError("Display name is required"); setAuthLoading(false); return; }
+    if (!regForm.email.trim() || !regForm.email.includes("@")) { setAuthError("A valid email is required for password recovery"); setAuthLoading(false); return; }
     if (regForm.password !== regForm.confirmPassword) { setAuthError("Passwords do not match"); setAuthLoading(false); return; }
     if (regForm.password.length < 6) { setAuthError("Password must be at least 6 characters"); setAuthLoading(false); return; }
-    // Normalize email for Supabase — guild emails like @rampage.gg aren't real domains,
-    // so we convert them to a supabase-safe format while keeping the guild email in the profile.
-    const guildEmail = regForm.email.trim().toLowerCase();
-    const authEmail = guildEmail.includes("@")
-      ? guildEmail.replace(/@.+$/, "@rampageguild.gg")  // replace domain with valid one for Supabase auth
-      : `${guildEmail}@rampageguild.gg`;
+    const email = regForm.email.trim().toLowerCase();
     try {
       const { data, error } = await supabase.auth.signUp({
-        email: authEmail, password: regForm.password,
+        email, password: regForm.password,
         options: { data: { display_name: regForm.name.toUpperCase(), cls: regForm.cls } }
       });
       if (error) { setAuthError(error.message); setAuthLoading(false); return; }
       const newM = {
         id: data.user?.id || String(Date.now()),
         name: regForm.name.toUpperCase(), role: "Recruit", cls: regForm.cls,
-        points: 0, status: "Active", email: guildEmail, // store their original guild email
+        points: 0, status: "Active", email,
         joined: new Date().toLocaleDateString("en-US",{month:"short",year:"numeric"}),
         created_at: new Date().toISOString(),
       };
       const { error: insertErr } = await supabase.from("members").insert([newM]);
       if (insertErr) {
+        // If duplicate, just log in
+        if (insertErr.code === "23505") {
+          setAuthError("Account already exists. Please sign in.");
+          setAuthLoading(false); return;
+        }
         setMembers(prev=>[...prev, newM]);
         lsSet("rampageMembers", [...lsGet("rampageMembers",[]), newM]);
       } else {
         setMembers(prev=>[...prev, newM]);
       }
-      setCurrentUser({ id:newM.id, email:guildEmail, role:"Recruit", name:newM.name, points:0 });
+      // If email confirmation is required by Supabase, inform the user
+      if (data.user && !data.session) {
+        setAuthError("✅ Account created! Check your email to confirm your account, then sign in.");
+        setAuthLoading(false); return;
+      }
+      setCurrentUser({ id:newM.id, email, role:"Recruit", name:newM.name, points:0 });
     } catch(e) {
-      const newM = { id: String(Date.now()), name: regForm.name.toUpperCase(), role: "Recruit", cls: regForm.cls, points: 0, status: "Active", email: guildEmail };
-      setMembers(prev=>[...prev, newM]);
-      lsSet("rampageMembers", [...lsGet("rampageMembers",[]), newM]);
-      setCurrentUser({ id:newM.id, email:guildEmail, role:"Recruit", name:newM.name, points:0 });
+      setAuthError("Registration failed. Please try again.");
     }
     setAuthLoading(false);
+  };
+
+  const handleForgotPassword = async(email)=>{
+    if (!email || !email.includes("@")) return { error: "Enter a valid email address." };
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: window.location.origin,
+    });
+    if (error) return { error: error.message };
+    return { success: true };
   };
 
   const handleLogout = async()=>{
     await supabase.auth.signOut().catch(()=>{});
     setCurrentUser(null); setAuthPage("login"); setLoginForm({email:"",password:""});
   };
-
-  // ── Admin: Wipe accounts ───────────────────────────────────────────────────
   const handleWipeAccounts = async()=>{
     setWipeLoading(true);
     try {
-      await supabase.from("members").delete().neq("role","Leader");
-      setMembers(prev=>prev.filter(m=>m.role==="Leader"));
-      lsSet("rampageMembers", members.filter(m=>m.role==="Leader"));
-      showToast("🗑️ All non-leader accounts wiped","warn");
+      await supabase.from("members").delete().not("role","in","(\"Admin\",\"Leader\")");
+      setMembers(prev=>prev.filter(m=>m.role==="Admin"||m.role==="Leader"));
+      lsSet("rampageMembers", members.filter(m=>m.role==="Admin"||m.role==="Leader"));
+      showToast("🗑️ All non-leader/admin accounts wiped","warn");
     } catch {
-      setMembers(prev=>prev.filter(m=>m.role==="Leader"));
+      setMembers(prev=>prev.filter(m=>m.role==="Admin"||m.role==="Leader"));
       showToast("🗑️ Accounts wiped (local)","warn");
     }
     setWipeLoading(false); setShowWipeConfirm(false); setShowPermissions(false);
@@ -894,8 +893,9 @@ export default function App() {
   const activeCount    = members.filter(m=>m.status==="Active").length;
   const leaderCount    = members.filter(m=>m.role==="Leader").length;
   const elderCount     = members.filter(m=>m.role==="Elder").length;
-  const isLeader       = currentUser?.role==="Leader";
-  const isAdmin        = currentUser && (currentUser.role==="Leader"||currentUser.role==="Elder");
+  const isLeader       = currentUser?.role==="Leader" || currentUser?.role==="Admin";
+  const isAdmin        = currentUser && (currentUser.role==="Admin"||currentUser.role==="Leader"||currentUser.role==="Elder");
+  const isSuperAdmin   = currentUser?.role==="Admin";
   const canManage      = currentUser && CAN_MANAGE(currentUser.role);
   const myPoints       = members.find(m=>m.name===currentUser?.name)?.points || 0;
   const myBids         = auctionItems.filter(i=>i.bids.some(b=>b.bidder===currentUser?.name));
@@ -911,6 +911,7 @@ export default function App() {
       loginForm={loginForm} setLoginForm={setLoginForm}
       regForm={regForm} setRegForm={setRegForm}
       onLogin={handleLogin} onRegister={handleRegister}
+      onForgotPassword={handleForgotPassword}
       loading={authLoading} error={authError} setError={setAuthError}
     />;
   }
@@ -1712,8 +1713,8 @@ export default function App() {
               <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"22px",gridColumn:"1/-1"}}>
                 <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#f1f5f9",marginBottom:14,letterSpacing:"0.04em"}}>🔑 Leadership · Elders: {elderCount}/{MAX_ELDERS}</h3>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>
-                  {members.filter(m=>["Leader","Elder"].includes(m.role)).map(m=>{
-                    const rs=ROLE_STYLE[m.role];
+                  {members.filter(m=>["Admin","Leader","Elder"].includes(m.role)).map(m=>{
+                    const rs=ROLE_STYLE[m.role]||ROLE_STYLE.Member;
                     return(
                       <div key={m.id} style={{background:rs.bg,border:`1px solid ${rs.border}`,borderRadius:13,padding:"14px 16px",display:"flex",alignItems:"center",gap:10}}>
                         <div style={{width:36,height:36,borderRadius:10,background:rs.bg,border:`1px solid ${rs.border}`,color:rs.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:800}}>{m.name[0]}</div>
@@ -1724,7 +1725,7 @@ export default function App() {
                       </div>
                     );
                   })}
-                  {members.filter(m=>["Leader","Elder"].includes(m.role)).length===0&&(
+                  {members.filter(m=>["Admin","Leader","Elder"].includes(m.role)).length===0&&(
                     <div style={{color:"#3d5070",fontSize:12}}>No leaders/elders assigned yet.</div>
                   )}
                 </div>
@@ -2066,21 +2067,24 @@ export default function App() {
       {showPermissions&&isAdmin&&(
         <div onClick={()=>setShowPermissions(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",backdropFilter:"blur(8px)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center"}}>
           <div className="modal-box" onClick={e=>e.stopPropagation()}
-            style={{background:"#080a16",border:"1px solid rgba(251,191,36,0.2)",borderRadius:24,padding:"32px",width:500,boxShadow:"0 32px 100px rgba(0,0,0,0.95)"}}>
-            <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:22,fontWeight:700,color:"#f1f5f9",letterSpacing:"0.04em",marginBottom:6}}>🔐 Admin Control Panel</h3>
-            <p style={{color:"#3d5070",fontSize:12,marginBottom:24}}>Leader & Elder access only</p>
+            style={{background:"#080a16",border:"1px solid rgba(251,191,36,0.2)",borderRadius:24,padding:"32px",width:520,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 32px 100px rgba(0,0,0,0.95)"}}>
+            <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:22,fontWeight:700,color:"#f1f5f9",letterSpacing:"0.04em",marginBottom:4}}>🔐 Admin Control Panel</h3>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
+              <span style={{fontSize:11,background:ROLE_STYLE[currentUser.role]?.bg,color:ROLE_STYLE[currentUser.role]?.color,border:`1px solid ${ROLE_STYLE[currentUser.role]?.border}`,padding:"2px 10px",borderRadius:6,fontWeight:700}}>{currentUser.role}</span>
+              <span style={{fontSize:11,color:"#3d5070"}}>{currentUser.email}</span>
+            </div>
 
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:"16px 18px"}}>
-                <div style={{fontSize:13.5,fontWeight:700,color:"#e2e8f0",marginBottom:4}}>📊 Guild Stats</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
+                <div style={{fontSize:13.5,fontWeight:700,color:"#e2e8f0",marginBottom:10}}>📊 Guild Stats</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                   {[
                     {label:"Total Members",value:members.length},
                     {label:"Leaders",value:`${leaderCount}/1`},
                     {label:"Elders",value:`${elderCount}/${MAX_ELDERS}`},
+                    {label:"Recruits",value:members.filter(m=>m.role==="Recruit").length},
                     {label:"Total Events",value:events.length},
                     {label:"Total Points",value:totalGuildPoints.toLocaleString()},
-                    {label:"Auction Items",value:auctionItems.length},
                   ].map(s=>(
                     <div key={s.label} style={{background:"rgba(255,255,255,0.03)",borderRadius:9,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                       <span style={{fontSize:11,color:"#3d5070"}}>{s.label}</span>
@@ -2089,6 +2093,22 @@ export default function App() {
                   ))}
                 </div>
               </div>
+
+              {isSuperAdmin&&(
+                <div style={{background:"rgba(239,68,68,0.06)",border:"1px solid rgba(239,68,68,0.2)",borderRadius:14,padding:"16px 18px"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#f87171",marginBottom:6}}>🔑 Admin Setup (Supabase)</div>
+                  <p style={{fontSize:11.5,color:"#64748b",lineHeight:1.7,marginBottom:8}}>
+                    To create/reset the <strong style={{color:"#f87171"}}>Admin</strong> account:
+                  </p>
+                  <ol style={{paddingLeft:18,fontSize:11.5,color:"#64748b",lineHeight:2,margin:0}}>
+                    <li>Go to <strong style={{color:"#60a5fa"}}>Supabase Dashboard → Authentication → Users</strong></li>
+                    <li>Delete any old admin accounts you want to reset</li>
+                    <li>Click <strong style={{color:"#60a5fa"}}>Invite User</strong> with your email &amp; chosen password</li>
+                    <li>In <strong style={{color:"#60a5fa"}}>Table Editor → members</strong>, set <code style={{background:"rgba(255,255,255,0.08)",padding:"1px 5px",borderRadius:4}}>role = "Admin"</code> for your row</li>
+                    <li>Sign in — Admin badge will appear automatically</li>
+                  </ol>
+                </div>
+              )}
 
               <button className="btn" onClick={()=>exportToExcel(false)}
                 style={{background:"rgba(52,211,153,0.1)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",padding:"13px",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
@@ -2101,11 +2121,11 @@ export default function App() {
                   {!showWipeConfirm?(
                     <button className="btn" onClick={()=>setShowWipeConfirm(true)}
                       style={{background:"rgba(239,68,68,0.12)",border:"1px solid rgba(239,68,68,0.3)",color:"#f87171",padding:"10px 18px",fontSize:12,width:"100%"}}>
-                      🗑️ Wipe All Non-Leader Accounts
+                      🗑️ Wipe All Non-Leader/Admin Accounts
                     </button>
                   ):(
                     <div>
-                      <p style={{color:"#f87171",fontSize:12,marginBottom:12}}>Are you sure? This will delete ALL member and recruit accounts.</p>
+                      <p style={{color:"#f87171",fontSize:12,marginBottom:12}}>Are you sure? This will delete ALL member, elder, and recruit accounts. Admin &amp; Leader are kept.</p>
                       <div style={{display:"flex",gap:10}}>
                         <button className="btn" onClick={()=>setShowWipeConfirm(false)} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"10px"}}>Cancel</button>
                         <button className="btn" onClick={handleWipeAccounts} disabled={wipeLoading}
@@ -2121,7 +2141,7 @@ export default function App() {
 
             <button className="btn" onClick={()=>setShowPermissions(false)}
               style={{width:"100%",marginTop:20,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"12px",fontSize:13}}>
-              Close Admin Panel
+              Close
             </button>
           </div>
         </div>
@@ -2376,7 +2396,20 @@ function BossPanel({ bosses, onKill, onReset, onManual, onBossImage, killFlash, 
 // ═══════════════════════════════════════════════════════════════════════════
 //  AUTH SCREEN
 // ═══════════════════════════════════════════════════════════════════════════
-function AuthScreen({ page, setPage, loginForm, setLoginForm, regForm, setRegForm, onLogin, onRegister, loading, error, setError }) {
+function AuthScreen({ page, setPage, loginForm, setLoginForm, regForm, setRegForm, onLogin, onRegister, onForgotPassword, loading, error, setError }) {
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotStatus, setForgotStatus] = useState(null); // {type:"success"|"error", msg}
+  const [forgotLoading, setForgotLoading] = useState(false);
+
+  const handleForgotSubmit = async()=>{
+    setForgotLoading(true); setForgotStatus(null);
+    const result = await onForgotPassword(forgotEmail);
+    if (result.error) setForgotStatus({type:"error", msg:result.error});
+    else setForgotStatus({type:"success", msg:"✅ Password reset email sent! Check your inbox."});
+    setForgotLoading(false);
+  };
+
   return(
     <>
       <style>{`
@@ -2418,71 +2451,103 @@ function AuthScreen({ page, setPage, loginForm, setLoginForm, regForm, setRegFor
             <p style={{color:"#2d3a52",fontSize:10.5,letterSpacing:"0.12em",marginTop:4}}>GUILD TRACKER · SEASON 12</p>
           </div>
 
-          <div style={{display:"flex",gap:6,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:13,padding:5,marginBottom:24}}>
-            <button className={`tab-btn${page==="login"?" active":""}`} onClick={()=>{setPage("login");setError("");}}>Sign In</button>
-            <button className={`tab-btn${page==="register"?" active":""}`} onClick={()=>{setPage("register");setError("");}}>Register</button>
-          </div>
-
-          {error&&(
-            <div className="error-shake" style={{background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.3)",borderRadius:11,padding:"10px 14px",marginBottom:16,fontSize:12.5,color:"#fca5a5",display:"flex",alignItems:"center",gap:8}}>
-              <span>⚠️</span>{error}
-            </div>
-          )}
-
-          {page==="login"&&(
+          {/* Forgot Password modal overlay */}
+          {showForgot ? (
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
-              <div>
-                <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.09em"}}>Email</label>
-                <input className="auth-input" type="text" placeholder="e.g. nokia232@rampage.gg" value={loginForm.email} onChange={e=>setLoginForm(p=>({...p,email:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&onLogin()} />
+              <div style={{textAlign:"center",marginBottom:4}}>
+                <div style={{fontSize:22}}>🔑</div>
+                <div style={{fontWeight:700,color:"#e2e8f0",fontSize:15,marginTop:4}}>Reset Password</div>
+                <div style={{fontSize:11.5,color:"#64748b",marginTop:4}}>Enter the email linked to your account and we'll send a reset link.</div>
               </div>
-              <div>
-                <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.09em"}}>Password</label>
-                <input className="auth-input" type="password" placeholder="••••••••" value={loginForm.password} onChange={e=>setLoginForm(p=>({...p,password:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&onLogin()} />
-              </div>
-              <button className="auth-btn" onClick={onLogin} disabled={loading}
-                style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",marginTop:6,boxShadow:"0 6px 30px rgba(99,102,241,0.35)"}}>
-                {loading?"Signing in...":"Sign In →"}
+              {forgotStatus&&(
+                <div style={{background:forgotStatus.type==="success"?"rgba(52,211,153,0.1)":"rgba(239,68,68,0.1)",border:`1px solid ${forgotStatus.type==="success"?"rgba(52,211,153,0.3)":"rgba(239,68,68,0.3)"}`,borderRadius:11,padding:"10px 14px",fontSize:12.5,color:forgotStatus.type==="success"?"#6ee7b7":"#fca5a5"}}>
+                  {forgotStatus.msg}
+                </div>
+              )}
+              <input className="auth-input" type="email" placeholder="your@email.com" value={forgotEmail}
+                onChange={e=>setForgotEmail(e.target.value)}
+                onKeyDown={e=>e.key==="Enter"&&handleForgotSubmit()} />
+              <button className="auth-btn" onClick={handleForgotSubmit} disabled={forgotLoading}
+                style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",boxShadow:"0 6px 30px rgba(99,102,241,0.35)"}}>
+                {forgotLoading?"Sending...":"Send Reset Link →"}
               </button>
-              <div style={{background:"rgba(251,191,36,0.07)",border:"1px solid rgba(251,191,36,0.18)",borderRadius:10,padding:"12px 16px",marginTop:4,textAlign:"center"}}>
-                <div style={{fontSize:14,color:"#fbbf24",fontWeight:700,letterSpacing:"0.06em",marginBottom:4}}>⚔️ Welcome to RAMPAGE</div>
-                <p style={{fontSize:11.5,color:"#64748b",lineHeight:1.6}}>Register with your guild name and sign in. New accounts start as <strong style={{color:"#a78bfa"}}>Recruit</strong>. Leader <strong style={{color:"#fbbf24"}}>Valiant</strong> will assign your rank.</p>
-              </div>
+              <button onClick={()=>{setShowForgot(false);setForgotStatus(null);setForgotEmail("");}}
+                style={{background:"none",border:"none",color:"#3d5070",fontSize:12.5,cursor:"pointer",fontFamily:"'Exo 2',sans-serif",textDecoration:"underline"}}>
+                ← Back to Sign In
+              </button>
             </div>
-          )}
+          ) : (
+            <>
+              <div style={{display:"flex",gap:6,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:13,padding:5,marginBottom:24}}>
+                <button className={`tab-btn${page==="login"?" active":""}`} onClick={()=>{setPage("login");setError("");}}>Sign In</button>
+                <button className={`tab-btn${page==="register"?" active":""}`} onClick={()=>{setPage("register");setError("");}}>Register</button>
+              </div>
 
-          {page==="register"&&(
-            <div style={{display:"flex",flexDirection:"column",gap:13}}>
-              <div>
-                <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.09em"}}>Display Name</label>
-                <input className="auth-input" type="text" placeholder="Your guild name" value={regForm.name} onChange={e=>setRegForm(p=>({...p,name:e.target.value}))} />
-              </div>
-              <div>
-                <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.09em"}}>Email</label>
-                <input className="auth-input" type="text" placeholder="e.g. nokia232@rampage.gg" value={regForm.email} onChange={e=>setRegForm(p=>({...p,email:e.target.value}))} />
-              </div>
-              <div>
-                <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.09em"}}>Class</label>
-                <select className="auth-input" value={regForm.cls} onChange={e=>setRegForm(p=>({...p,cls:e.target.value}))} style={{cursor:"pointer"}}>
-                  {["Berserker","Skald","Warlord","Volva","Archer","RuneFighter"].map(o=><option key={o} value={o} style={{background:"#0a0c18"}}>{o}</option>)}
-                </select>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <div>
-                  <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.09em"}}>Password</label>
-                  <input className="auth-input" type="password" placeholder="Min 6 chars" value={regForm.password} onChange={e=>setRegForm(p=>({...p,password:e.target.value}))} />
+              {error&&(
+                <div className="error-shake" style={{background: error.startsWith("✅")?"rgba(52,211,153,0.1)":"rgba(239,68,68,0.1)",border:`1px solid ${error.startsWith("✅")?"rgba(52,211,153,0.3)":"rgba(239,68,68,0.3)"}`,borderRadius:11,padding:"10px 14px",marginBottom:16,fontSize:12.5,color:error.startsWith("✅")?"#6ee7b7":"#fca5a5",display:"flex",alignItems:"center",gap:8}}>
+                  <span>{error.startsWith("✅")?"":"⚠️"}</span>{error}
                 </div>
-                <div>
-                  <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.09em"}}>Confirm</label>
-                  <input className="auth-input" type="password" placeholder="Repeat" value={regForm.confirmPassword} onChange={e=>setRegForm(p=>({...p,confirmPassword:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&onRegister()} />
+              )}
+
+              {page==="login"&&(
+                <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                  <div>
+                    <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.09em"}}>Email</label>
+                    <input className="auth-input" type="email" placeholder="your@email.com" value={loginForm.email} onChange={e=>setLoginForm(p=>({...p,email:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&onLogin()} />
+                  </div>
+                  <div>
+                    <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.09em"}}>Password</label>
+                    <input className="auth-input" type="password" placeholder="••••••••" value={loginForm.password} onChange={e=>setLoginForm(p=>({...p,password:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&onLogin()} />
+                  </div>
+                  <div style={{textAlign:"right",marginTop:-6}}>
+                    <button onClick={()=>{setShowForgot(true);setError("");}} style={{background:"none",border:"none",color:"#60a5fa",fontSize:11.5,cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:600}}>Forgot password?</button>
+                  </div>
+                  <button className="auth-btn" onClick={onLogin} disabled={loading}
+                    style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",marginTop:2,boxShadow:"0 6px 30px rgba(99,102,241,0.35)"}}>
+                    {loading?"Signing in...":"Sign In →"}
+                  </button>
+                  <div style={{background:"rgba(251,191,36,0.07)",border:"1px solid rgba(251,191,36,0.18)",borderRadius:10,padding:"12px 16px",marginTop:4,textAlign:"center"}}>
+                    <div style={{fontSize:14,color:"#fbbf24",fontWeight:700,letterSpacing:"0.06em",marginBottom:4}}>⚔️ Welcome to RAMPAGE</div>
+                    <p style={{fontSize:11.5,color:"#64748b",lineHeight:1.6}}>Register with your email and guild name. New accounts start as <strong style={{color:"#a78bfa"}}>Recruit</strong>. Leader <strong style={{color:"#fbbf24"}}>Valiant</strong> will assign your rank.</p>
+                  </div>
                 </div>
-              </div>
-              <button className="auth-btn" onClick={onRegister} disabled={loading}
-                style={{background:"linear-gradient(135deg,#0f766e,#14b8a6)",color:"#fff",marginTop:4,boxShadow:"0 6px 30px rgba(20,184,166,0.3)"}}>
-                {loading?"Creating account...":"Create Account →"}
-              </button>
-              <p style={{textAlign:"center",color:"#3d5070",fontSize:11.5}}>Use any email — <strong style={{color:"#60a5fa"}}>@rampage.gg</strong> works fine ✓</p>
-              <p style={{textAlign:"center",color:"#3d5070",fontSize:11}}>New members join as <strong style={{color:"#a78bfa"}}>Recruit</strong> — Valiant will promote you.</p>
-            </div>
+              )}
+
+              {page==="register"&&(
+                <div style={{display:"flex",flexDirection:"column",gap:13}}>
+                  <div>
+                    <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.09em"}}>Display Name</label>
+                    <input className="auth-input" type="text" placeholder="Your guild name" value={regForm.name} onChange={e=>setRegForm(p=>({...p,name:e.target.value}))} />
+                  </div>
+                  <div>
+                    <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.09em"}}>Email <span style={{color:"#60a5fa",fontWeight:400,textTransform:"none",fontSize:10}}>(real email — used for password recovery)</span></label>
+                    <input className="auth-input" type="email" placeholder="your@email.com" value={regForm.email} onChange={e=>setRegForm(p=>({...p,email:e.target.value}))} />
+                  </div>
+                  <div>
+                    <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.09em"}}>Class</label>
+                    <select className="auth-input" value={regForm.cls} onChange={e=>setRegForm(p=>({...p,cls:e.target.value}))} style={{cursor:"pointer"}}>
+                      {["Berserker","Skald","Warlord","Volva","Archer","RuneFighter"].map(o=><option key={o} value={o} style={{background:"#0a0c18"}}>{o}</option>)}
+                    </select>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                    <div>
+                      <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.09em"}}>Password</label>
+                      <input className="auth-input" type="password" placeholder="Min 6 chars" value={regForm.password} onChange={e=>setRegForm(p=>({...p,password:e.target.value}))} />
+                    </div>
+                    <div>
+                      <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:7,textTransform:"uppercase",letterSpacing:"0.09em"}}>Confirm</label>
+                      <input className="auth-input" type="password" placeholder="Repeat" value={regForm.confirmPassword} onChange={e=>setRegForm(p=>({...p,confirmPassword:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&onRegister()} />
+                    </div>
+                  </div>
+                  <button className="auth-btn" onClick={onRegister} disabled={loading}
+                    style={{background:"linear-gradient(135deg,#0f766e,#14b8a6)",color:"#fff",marginTop:4,boxShadow:"0 6px 30px rgba(20,184,166,0.3)"}}>
+                    {loading?"Creating account...":"Create Account →"}
+                  </button>
+                  <p style={{textAlign:"center",color:"#3d5070",fontSize:11.5}}>Use your <strong style={{color:"#60a5fa"}}>real email</strong> to enable password recovery ✓</p>
+                  <p style={{textAlign:"center",color:"#3d5070",fontSize:11}}>New members join as <strong style={{color:"#a78bfa"}}>Recruit</strong> — Admin will promote you.</p>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
