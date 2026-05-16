@@ -554,6 +554,8 @@ export default function App() {
   const handleBossImageUpload = (e)=>{
     const file = e.target.files?.[0]; if(!file||!bossImageModal) return;
     handleBossImageUploadGroup(file, bossImageModal.id, bossImageModal.group);
+    // Reset file input so same file can be re-selected next time
+    e.target.value = "";
   };
 
   // ── Boss group setter helper ──────────────────────────────────────────────
@@ -654,8 +656,11 @@ export default function App() {
       const { data: urlData } = supabase.storage.from('boss-images').getPublicUrl(path);
       const publicUrl = urlData?.publicUrl;
       if (publicUrl) {
-        getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:publicUrl}:b));
-        setBossImageModal(null); showToast("🖼️ Boss image uploaded!");
+        // Add cache-bust timestamp so browser doesn't show stale image
+        const freshUrl = `${publicUrl}?t=${Date.now()}`;
+        getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:freshUrl}:b));
+        setBossImageModal(null);
+        showToast("🖼️ Boss image uploaded!");
       }
     } catch(e) {
       console.error("Upload exception:", e);
