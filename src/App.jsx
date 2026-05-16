@@ -239,7 +239,7 @@ export default function App() {
   const [timerSS, setTimerSS]   = useState("0");
   const [addChannelModal, setAddChannelModal]       = useState(null); // group name
   const [attendance, setAttendance]   = useState([]);
-  const [auctionItems, setAuctionItems] = useState(()=>lsGet("rampageAuction", INIT_AUCTION_ITEMS));
+  const [auctionItems, setAuctionItems] = useState([]);
   const [winners, setWinners]         = useState([]);
   const [search, setSearch]           = useState("");
   const [killFlash, setKillFlash]     = useState(null);
@@ -298,7 +298,6 @@ export default function App() {
   useEffect(()=>{ lsSet("rampageCanyon", canyonBosses); }, [canyonBosses]);
   useEffect(()=>{ lsSet("rampageLindwurm", lindwurmBosses); }, [lindwurmBosses]);
   useEffect(()=>{ lsSet("rampageHilders", hildersBosses); }, [hildersBosses]);
-  useEffect(()=>{ lsSet("rampageAuction", auctionItems); }, [auctionItems]);
   useEffect(()=>{ lsSet("rampageEventPoints", eventPoints); }, [eventPoints]);
   useEffect(()=>{ lsSet("rampageAttCodes", eventAttCodes); }, [eventAttCodes]);
 
@@ -366,10 +365,14 @@ export default function App() {
   },[]);
 
   // ── Load members from Supabase ────────────────────────────────────────────
-  useEffect(()=>{ loadMembers(); },[]);
-  useEffect(()=>{ loadAuctionItems(); },[]);
-  useEffect(()=>{ loadEvents(); },[]);
-  useEffect(()=>{ loadWinners(); },[]);
+  useEffect(()=>{
+    // Clear old localStorage auction cache — Supabase is now the source of truth
+    localStorage.removeItem("rampageAuction");
+    loadMembers();
+    loadAuctionItems();
+    loadEvents();
+    loadWinners();
+  },[]);
 
   // ── Supabase real-time subscriptions ─────────────────────────────────────
   useEffect(()=>{
