@@ -115,10 +115,10 @@ const INIT_AUCTION_ITEMS = [
 // ── Event types with default points ─────────────────────────────────────────
 const EVENT_TYPES = [
   { id:"sindri",    label:"Sindri Battle",    icon:"⚔️",  defaultPoints:10, color:"#f59e0b" },
-  { id:"server",    label:"Server Battle",    icon:"🌐",  defaultPoints:5,  color:"#60a5fa" },
-  { id:"fieldboss", label:"Field Boss",       icon:"👹",  defaultPoints:5,  color:"#f87171" },
-  { id:"sanctuary", label:"Guild Sanctuary",  icon:"🏛️",  defaultPoints:5,  color:"#34d399" },
-  { id:"ymir",      label:"Ymir Cup",         icon:"🏆",  defaultPoints:5,  color:"#a78bfa" },
+  { id:"server",    label:"Server Battle",    icon:"🌐",  defaultPoints:3,  color:"#60a5fa" },
+  { id:"fieldboss", label:"Field Boss",       icon:"👹",  defaultPoints:1,  color:"#f87171" },
+  { id:"sanctuary", label:"Guild Sanctuary",  icon:"🏛️",  defaultPoints:3,  color:"#34d399" },
+  { id:"ymir",      label:"Ymir Cup",         icon:"🏆",  defaultPoints:0,  color:"#a78bfa", adminOnly:true },
 ];
 
 // ── Field Boss schedule (from game) ─────────────────────────────────────────
@@ -239,8 +239,8 @@ export default function App() {
   const [timerSS, setTimerSS]   = useState("0");
   const [addChannelModal, setAddChannelModal]       = useState(null); // group name
   const [attendance, setAttendance]   = useState([]);
-  const [auctionItems, setAuctionItems] = useState(()=>lsGet("rampageAuction", INIT_AUCTION_ITEMS));
-  const [winners, setWinners]         = useState(()=>lsGet("rampageWinners", []));
+  const [auctionItems, setAuctionItems] = useState([]);
+  const [winners, setWinners]         = useState([]);
   const [search, setSearch]           = useState("");
   const [killFlash, setKillFlash]     = useState(null);
   const [showAddMember, setShowAddMember] = useState(false);
@@ -266,7 +266,7 @@ export default function App() {
   const [bossImageModal, setBossImageModal] = useState(null);
 
   // ── Events & Attendance ──────────────────────────────────────────────────
-  const [events, setEvents]           = useState(()=>lsGet("rampageEvents",[]));
+  const [events, setEvents]           = useState([]);
   const [showCreateEvent, setShowCreateEvent] = useState(false);
   const [eventForm, setEventForm]     = useState({ type:"sindri", name:"", date:today, notes:"", server:"", points:10 });
   const [markEventId, setMarkEventId] = useState(null); // event being marked for attendance
@@ -277,6 +277,13 @@ export default function App() {
     EVENT_TYPES.forEach(et=>{ merged[et.id] = saved[et.id] ?? et.defaultPoints; });
     return merged;
   });
+  // Attendance code security system — admin generates a code per event, members must enter it
+  const [eventAttCodes, setEventAttCodes] = useState(()=>lsGet("rampageAttCodes",{})); // {eventId: code}
+  const [showAttCodeModal, setShowAttCodeModal] = useState(null); // eventId for admin generating code
+  const [attCodeInput, setAttCodeInput] = useState(""); // member enters code
+  const [showMemberAttModal, setShowMemberAttModal] = useState(null); // {eventId, event}
+  const [generatedCode, setGeneratedCode] = useState(""); // shown to admin after generation
+  const [ymirPointsModal, setYmirPointsModal] = useState(null); // eventId for admin to assign Ymir points
 
   const fileRef    = useRef(null);
   const bossImgRef = useRef(null);
@@ -291,10 +298,8 @@ export default function App() {
   useEffect(()=>{ lsSet("rampageCanyon", canyonBosses); }, [canyonBosses]);
   useEffect(()=>{ lsSet("rampageLindwurm", lindwurmBosses); }, [lindwurmBosses]);
   useEffect(()=>{ lsSet("rampageHilders", hildersBosses); }, [hildersBosses]);
-  useEffect(()=>{ lsSet("rampageAuction", auctionItems); }, [auctionItems]);
-  useEffect(()=>{ lsSet("rampageWinners", winners); }, [winners]);
-  useEffect(()=>{ lsSet("rampageEvents", events); }, [events]);
   useEffect(()=>{ lsSet("rampageEventPoints", eventPoints); }, [eventPoints]);
+  useEffect(()=>{ lsSet("rampageAttCodes", eventAttCodes); }, [eventAttCodes]);
 
   // ── Sync boss timer with real time on load ────────────────────────────────
   useEffect(()=>{
@@ -359,29 +364,68 @@ export default function App() {
     return () => { mounted=false; subscription.unsubscribe(); };
   },[]);
 
-  // ── Load members from Supabase ────────────────────────────────────────────
-  useEffect(()=>{ loadMembers(); },[]);
-  useEffect(()=>{ loadAuctionItems(); },[]);
+  // ── Load data from Supabase on mount ─────────────────────────────────────
+  useEffect(()=>{
+    localStorage.removeItem("rampageAuction"); // clear stale cache
+    loadMembers();
+    loadAuctionItems();
+    loadEvents();
+    loadWinners();
+  },[]);
 
   // ── Supabase real-time subscriptions ─────────────────────────────────────
   useEffect(()=>{
-    // Auction items real-time
     const auctionSub = supabase
       .channel("auction_items_rt")
-      .on("postgres_changes",{event:"*",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); })
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"auction_items"},(payload)=>{
+        const u = payload.new;
+        setAuctionItems(prev=>prev.map(item=>{
+          if(String(item.id)!==String(u.id)) return item;
+          return {
+            ...item,
+            currentBid:  u.currentBid  ?? item.currentBid,
+            highBidder:  u.highBidder  ?? item.highBidder,
+            bids:        typeof u.bids==="string" ? JSON.parse(u.bids||"[]") : (u.bids||item.bids),
+            locked:      u.locked      ?? item.locked,
+            winner:      u.winner      ?? item.winner,
+            claimed:     u.claimed     ?? item.claimed,
+            image:       u.image       || item.image,
+          };
+        }));
+      })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"auction_items"},(payload)=>{
+        setAuctionItems(prev=>prev.filter(item=>String(item.id)!==String(payload.old.id)));
+      })
       .subscribe();
 
-    // Members real-time — so new registrations & role/points changes appear everywhere instantly
     const membersSub = supabase
       .channel("members_rt")
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"members"},()=>{ loadMembers(); })
-      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"members"},()=>{ loadMembers(); })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"members"},(payload)=>{
+        const u = payload.new;
+        setMembers(prev=>prev.map(m=>String(m.id)===String(u.id)?{...m,...u}:m));
+      })
       .on("postgres_changes",{event:"DELETE",schema:"public",table:"members"},()=>{ loadMembers(); })
+      .subscribe();
+
+    const eventsSub = supabase
+      .channel("events_rt")
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},()=>{ loadEvents(); })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"events"},()=>{ loadEvents(); })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"events"},()=>{ loadEvents(); })
+      .subscribe();
+
+    const winnersSub = supabase
+      .channel("winners_rt")
+      .on("postgres_changes",{event:"*",schema:"public",table:"winners"},()=>{ loadWinners(); })
       .subscribe();
 
     return ()=>{
       supabase.removeChannel(auctionSub);
       supabase.removeChannel(membersSub);
+      supabase.removeChannel(eventsSub);
+      supabase.removeChannel(winnersSub);
     };
   },[]);
 
@@ -402,7 +446,7 @@ export default function App() {
   const loadAuctionItems = async()=>{
     try {
       const { data, error } = await supabase.from("auction_items").select("*").order("created_at",{ascending:false});
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         setAuctionItems(data.map(i=>({
           ...i,
           bids: typeof i.bids === "string" ? JSON.parse(i.bids) : (i.bids||[]),
@@ -410,6 +454,44 @@ export default function App() {
         })));
       }
     } catch {}
+  };
+
+  const loadEvents = async()=>{
+    try {
+      const { data, error } = await supabase.from("events").select("*").order("created_at",{ascending:false});
+      if (!error && data) {
+        setEvents(data.map(ev=>({
+          ...ev,
+          attendance: typeof ev.attendance === "string" ? JSON.parse(ev.attendance) : (ev.attendance||{}),
+          att_code: typeof ev.att_code === "string" ? JSON.parse(ev.att_code) : (ev.att_code||null),
+        })));
+        // Populate local att codes from Supabase so check-in works on all devices
+        const codes = {};
+        data.forEach(ev=>{
+          if (ev.att_code) {
+            codes[ev.id] = typeof ev.att_code === "string" ? JSON.parse(ev.att_code) : ev.att_code;
+          }
+        });
+        if (Object.keys(codes).length > 0) setEventAttCodes(prev=>({...prev,...codes}));
+      } else {
+        setEvents(lsGet("rampageEvents",[]));
+      }
+    } catch {
+      setEvents(lsGet("rampageEvents",[]));
+    }
+  };
+
+  const loadWinners = async()=>{
+    try {
+      const { data, error } = await supabase.from("winners").select("*").order("created_at",{ascending:false});
+      if (!error && data) {
+        setWinners(data);
+      } else {
+        setWinners(lsGet("rampageWinners",[]));
+      }
+    } catch {
+      setWinners(lsGet("rampageWinners",[]));
+    }
   };
 
   // Persist members locally as backup
@@ -739,7 +821,7 @@ export default function App() {
   };
 
   // ── Events ────────────────────────────────────────────────────────────────
-  const handleCreateEvent = ()=>{
+  const handleCreateEvent = async()=>{
     if(!eventForm.name.trim()) { showToast("❌ Event name required","error"); return; }
     const evType = EVENT_TYPES.find(e=>e.id===eventForm.type);
     const ev = {
@@ -754,20 +836,37 @@ export default function App() {
       points: parseInt(eventForm.points) || eventPoints[eventForm.type] || evType?.defaultPoints || 5,
       attendance: {},
       createdBy: currentUser?.name,
-      createdAt: new Date().toISOString(),
+      created_at: new Date().toISOString(),
     };
-    setEvents(prev=>[ev,...prev]);
+    try {
+      const dbEv = {...ev, attendance: JSON.stringify({})};
+      const { error } = await supabase.from("events").insert([dbEv]);
+      if (error) throw error;
+      // Real-time sub will call loadEvents() automatically
+    } catch {
+      // Fallback: local state only
+      setEvents(prev=>[ev,...prev]);
+      lsSet("rampageEvents", [ev, ...lsGet("rampageEvents",[])]);
+    }
     setShowCreateEvent(false);
-    const firstType = EVENT_TYPES[0];
-    setEventForm({ type:"sindri", name:"", date:today, notes:"", server:"", points: eventPoints["sindri"] || firstType?.defaultPoints || 10 });
+    setEventForm({ type:"sindri", name:"", date:today, notes:"", server:"", points: eventPoints["sindri"] || 10 });
     showToast(`✅ Event "${ev.name}" created!`);
   };
 
   const handleMarkEventAttendance = async(eventId, memberId, present)=>{
+    // Optimistic local update first
+    let updatedAttendance = {};
     setEvents(prev=>prev.map(ev=>{
       if(ev.id!==eventId) return ev;
-      return {...ev, attendance:{...ev.attendance, [memberId]:present}};
+      updatedAttendance = {...(ev.attendance||{}), [memberId]:present};
+      return {...ev, attendance:updatedAttendance};
     }));
+    // Sync to Supabase
+    try {
+      const ev = events.find(e=>e.id===eventId);
+      const newAtt = {...(ev?.attendance||{}), [memberId]:present};
+      await supabase.from("events").update({attendance: JSON.stringify(newAtt)}).eq("id",eventId);
+    } catch {}
     // Give/remove points
     const ev = events.find(e=>e.id===eventId);
     if(!ev) return;
@@ -786,64 +885,142 @@ export default function App() {
     showToast("✅ All members marked present!");
   };
 
-  const handleDeleteEvent = (eventId)=>{
+  const handleDeleteEvent = async(eventId)=>{
+    try { await supabase.from("events").delete().eq("id",eventId); } catch {}
     setEvents(prev=>prev.filter(e=>e.id!==eventId));
     showToast("🗑️ Event deleted","warn");
   };
 
-  // ── Auction image upload to Supabase storage ──────────────────────────────
+  // ── Attendance Code Security ───────────────────────────────────────────────
+  const generateAttCode = async(eventId)=>{
+    const code = Math.random().toString(36).substring(2,8).toUpperCase();
+    const codeData = { code, expiresAt: Date.now() + 10*60*1000, usedBy:[] };
+    setEventAttCodes(prev=>({...prev,[eventId]:codeData}));
+    setGeneratedCode(code);
+    // Also write the code into the events table so other admins can see it if needed
+    try {
+      await supabase.from("events").update({ att_code: JSON.stringify(codeData) }).eq("id",eventId);
+    } catch {}
+    showToast(`🔑 Code generated: ${code}`);
+    return code;
+  };
+
+  const handleMemberSelfAttendance = async(eventId, code)=>{
+    // Always read the code from Supabase (the source of truth), not local state
+    let stored = null;
+    try {
+      const { data } = await supabase.from("events").select("att_code").eq("id", eventId).single();
+      if (data?.att_code) {
+        stored = typeof data.att_code === "string" ? JSON.parse(data.att_code) : data.att_code;
+      }
+    } catch {}
+    // Fallback to local state if Supabase fails
+    if (!stored) stored = eventAttCodes[eventId];
+
+    if(!stored || !stored.code) { showToast("❌ No active code for this event — ask admin to generate one","error"); return false; }
+    if(Date.now() > stored.expiresAt) { showToast("❌ Code expired — ask admin for a new code","error"); return false; }
+    if(stored.code.toUpperCase() !== code.toUpperCase().trim()) { showToast("❌ Wrong code — try again","error"); return false; }
+    if(stored.usedBy?.includes(currentUser?.name)) { showToast("⚠️ You already checked in for this event!","warn"); return false; }
+
+    // Mark self as present
+    const myMember = members.find(m=>m.name===currentUser?.name);
+    if(!myMember) { showToast("❌ Could not find your member profile","error"); return false; }
+    await handleMarkEventAttendance(eventId, myMember.id, true);
+
+    // Update usedBy in Supabase so the same code can't be reused
+    const updatedCode = {...stored, usedBy:[...(stored.usedBy||[]), currentUser?.name]};
+    try {
+      await supabase.from("events").update({ att_code: JSON.stringify(updatedCode) }).eq("id", eventId);
+    } catch {}
+    setEventAttCodes(prev=>({...prev,[eventId]:updatedCode}));
+
+    showToast("✅ Attendance recorded! Points awarded.");
+    setShowMemberAttModal(null); setAttCodeInput("");
+    return true;
+  };
+
+  // ── Auction image upload ──────────────────────────────────────────────────
   const handleAuctionImageUpload = async(e)=>{
     const file = e.target.files?.[0]; if(!file) return;
     setAuctionImgUploading(true);
+    // Use the existing public 'auction-images' bucket
     try {
       const ext = file.name.split(".").pop();
-      const path = `auction/${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from("asset").upload(path, file, {cacheControl:"3600",upsert:false});
+      const path = `auction-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from("auction-images").upload(path, file, {cacheControl:"3600",upsert:false});
       if(!error) {
-        const { data: urlData } = supabase.storage.from("asset").getPublicUrl(path);
+        const { data: urlData } = supabase.storage.from("auction-images").getPublicUrl(path);
         setAuctionForm(p=>({...p,imageUrl:urlData.publicUrl,image:null}));
-        showToast("🖼️ Image uploaded!");
-      } else {
-        // fallback: local base64
-        const reader = new FileReader();
-        reader.onload = ev=>setAuctionForm(p=>({...p,imageUrl:ev.target.result,image:null}));
-        reader.readAsDataURL(file);
+        showToast("🖼️ Image uploaded to storage!");
+        setAuctionImgUploading(false);
+        return;
       }
-    } catch {
-      const reader = new FileReader();
-      reader.onload = ev=>setAuctionForm(p=>({...p,imageUrl:ev.target.result,image:null}));
-      reader.readAsDataURL(file);
-    }
+      console.warn("Storage upload error:", error.message);
+    } catch(err) { console.warn("Storage exception:", err); }
+
+    // Fallback: compress to small thumbnail so it fits in DB text column
+    try {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.onload = ()=>{
+        const canvas = document.createElement("canvas");
+        const MAX = 80;
+        const scale = Math.min(MAX/img.width, MAX/img.height, 1);
+        canvas.width = Math.round(img.width*scale);
+        canvas.height = Math.round(img.height*scale);
+        canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
+        const compressed = canvas.toDataURL("image/jpeg", 0.6);
+        setAuctionForm(p=>({...p,imageUrl:compressed,image:null}));
+        URL.revokeObjectURL(objectUrl);
+        showToast("🖼️ Image ready (compressed fallback)");
+        setAuctionImgUploading(false);
+      };
+      img.onerror = ()=>{ setAuctionImgUploading(false); showToast("❌ Image load failed","error"); };
+      img.src = objectUrl;
+      return;
+    } catch {}
     setAuctionImgUploading(false);
+    showToast("❌ Image upload failed","error");
   };
 
   const handleAddAuctionItem = async()=>{
     if(!auctionForm.name.trim()) { showToast("❌ Item name required","error"); return; }
     const endTime = Date.now() + (parseFloat(auctionForm.durationHours)||24)*3600000;
-    const item = {
-      id: String(Date.now()),
+    let safeImage = auctionForm.imageUrl || "🏺";
+    if(safeImage.startsWith("data:") && safeImage.length > 50000) {
+      showToast("⚠️ Image too large — using default icon","warn");
+      safeImage = "🏺";
+    }
+    // Only include columns that exist in Supabase — NO id (auto-generated), NO endTime
+    const dbItem = {
       name: auctionForm.name,
       rarity: auctionForm.rarity,
       minBid: parseInt(auctionForm.minBid)||500,
-      currentBid: 0, highBidder: null,
-      bids: [],
-      locked: false, winner: null, claimed: false,
-      image: auctionForm.imageUrl || "🏺",
+      currentBid: 0,
+      highBidder: null,
+      bids: JSON.stringify([]),
+      locked: false,
+      winner: null,
+      claimed: false,
+      image: safeImage,
       end_time: new Date(endTime).toISOString(),
-      endTime,
       created_at: new Date().toISOString(),
     };
     try {
-      const dbItem = {...item, bids:JSON.stringify([]), endTime:undefined};
       const { error } = await supabase.from("auction_items").insert([dbItem]);
-      if(error) throw error;
+      if(error) {
+        console.error("Supabase insert error:", error);
+        showToast(`❌ Save failed: ${error.message}`,"error");
+        return;
+      }
       await loadAuctionItems();
-    } catch {
-      setAuctionItems(prev=>[item,...prev]);
+      setShowAddAuction(false);
+      setAuctionForm({name:"",rarity:"Epic",minBid:1000,durationHours:24,image:null,imageUrl:""});
+      showToast(`✅ ${auctionForm.name} added to auction!`);
+    } catch(err) {
+      console.error("Auction insert exception:", err);
+      showToast("❌ Could not save to database — check console","error");
     }
-    setShowAddAuction(false);
-    setAuctionForm({name:"",rarity:"Epic",minBid:1000,durationHours:24,image:null,imageUrl:""});
-    showToast(`✅ ${item.name} added to auction!`);
   };
 
   const handleEditAuctionItem = async()=>{
@@ -875,8 +1052,9 @@ export default function App() {
     const amount = parseInt(bidAmount);
     const myMember = members.find(m=>m.name===currentUser?.name);
     const myPoints = myMember?.points || 0;
-    // Recruits cannot bid
-    if(currentUser?.role==="Recruit") { showToast("❌ Recruits cannot bid — wait for promotion","error"); return; }
+    // Only Leader, Elder, Member can bid. Recruits must wait 7 days (game rule).
+    const canBidRole = ["Leader","Elder","Member","Admin"].includes(currentUser?.role);
+    if(!canBidRole) { showToast("❌ Recruits cannot bid — 7-day waiting period applies in-game","error"); return; }
     if(!bidModal||isNaN(amount)) { showToast("❌ Enter a valid amount","error"); return; }
     if(amount <= bidModal.currentBid && bidModal.currentBid > 0) { showToast(`❌ Bid must exceed ${bidModal.currentBid.toLocaleString()} pts`,"error"); return; }
     if(amount < bidModal.minBid) { showToast(`❌ Minimum bid is ${bidModal.minBid.toLocaleString()} pts`,"error"); return; }
@@ -884,37 +1062,92 @@ export default function App() {
     const myName = currentUser?.name||"Guest";
     const newBid = {bidder:myName, amount, time:new Date().toLocaleTimeString()};
     const updatedBids = [...(bidModal.bids||[]), newBid];
-    // Real-time update via Supabase
-    try {
-      const { error } = await supabase.from("auction_items").update({
-        currentBid: amount,
-        highBidder: myName,
-        bids: JSON.stringify(updatedBids),
-      }).eq("id",bidModal.id);
-      if(!error) await loadAuctionItems();
-      else throw error;
-    } catch {
-      setAuctionItems(prev=>prev.map(item=>{
-        if(item.id!==bidModal.id) return item;
-        return {...item, currentBid:amount, highBidder:myName, bids:updatedBids};
-      }));
+
+    // ── Points: deduct from new bidder, refund previous high bidder ───────────
+    const prevHighBidder = bidModal.highBidder;
+    const prevBidAmount  = bidModal.currentBid || 0;
+
+    // 1) Deduct points from the new bidder
+    const myUpdatedPoints = myPoints - amount;
+    await supabase.from("members").update({points: myUpdatedPoints}).eq("id", myMember.id);
+    setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points: myUpdatedPoints} : m));
+    if(currentUser.id === myMember.id) setCurrentUser(prev=>({...prev, points: myUpdatedPoints}));
+
+    // 2) Refund the previous high bidder (if someone was outbid)
+    if(prevHighBidder && prevHighBidder !== myName && prevBidAmount > 0) {
+      const prevMember = members.find(m=>m.name===prevHighBidder);
+      if(prevMember) {
+        const refundedPoints = (prevMember.points || 0) + prevBidAmount;
+        await supabase.from("members").update({points: refundedPoints}).eq("id", prevMember.id);
+        setMembers(prev=>prev.map(m=>m.id===prevMember.id ? {...m, points: refundedPoints} : m));
+      }
     }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Update auction item in Supabase — realtime subscription refreshes all users
+    const { error } = await supabase.from("auction_items").update({
+      currentBid: amount,
+      highBidder: myName,
+      bids: JSON.stringify(updatedBids),
+    }).eq("id", bidModal.id);
+    if(error) {
+      showToast(`❌ Bid failed: ${error.message}`, "error");
+      // Rollback points on failure
+      await supabase.from("members").update({points: myPoints}).eq("id", myMember.id);
+      setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points: myPoints} : m));
+      if(currentUser.id === myMember.id) setCurrentUser(prev=>({...prev, points: myPoints}));
+      return;
+    }
+    // Optimistic local update so the bidder sees it instantly
+    setAuctionItems(prev=>prev.map(item=>{
+      if(item.id!==bidModal.id) return item;
+      return {...item, currentBid:amount, highBidder:myName, bids:updatedBids};
+    }));
     setBidModal(null); setBidAmount("");
     showToast(`🏺 Bid of ${amount.toLocaleString()} pts placed on ${bidModal.name}!`);
   };
 
   const handleAnnounceWinner = async(item)=>{
-    const w = {id:Date.now(),itemName:item.name,winner:item.highBidder,points:item.currentBid,date:new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}),claimed:false,rarity:item.rarity,image:item.image};
-    setWinners(prev=>[...prev,w]);
-    try { await supabase.from("auction_items").update({locked:true,winner:item.highBidder}).eq("id",item.id); await loadAuctionItems(); } catch {
-      setAuctionItems(prev=>prev.map(i=>i.id===item.id?{...i,locked:true,winner:item.highBidder}:i));
+    if(!item.highBidder) { showToast("❌ No bids placed yet","error"); return; }
+    // Check for duplicate — prevent announcing same item twice
+    const alreadyWon = winners.some(w=>w.itemName===item.name&&w.winner===item.highBidder);
+    if(alreadyWon) { showToast("⚠️ Winner already announced for this item","warn"); return; }
+    const w = {
+      // No client-generated id — let Supabase auto-generate uuid
+      itemName: item.name, winner: item.highBidder, points: item.currentBid,
+      date: new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}),
+      claimed: false, rarity: item.rarity, image: item.image,
+      created_at: new Date().toISOString(),
+    };
+    try {
+      const { error: wErr } = await supabase.from("winners").insert([w]);
+      if(wErr) throw wErr;
+      const { error: lErr } = await supabase.from("auction_items")
+        .update({locked:true, winner:item.highBidder})
+        .eq("id", item.id);
+      if(lErr) throw lErr;
+      await loadAuctionItems();
+      await loadWinners();
+    } catch(e) {
+      console.error("Announce winner error:", e);
+      showToast(`❌ Failed: ${e.message}`,"error");
+      return;
     }
     if(discordConnected) showToast("📢 Discord notified: Winner announced!","info");
     showToast(`🏆 ${item.highBidder} won ${item.name}!`);
   };
 
-  const handleClaimWinner = (id)=>{ setWinners(prev=>prev.map(w=>w.id===id?{...w,claimed:true}:w)); showToast("✅ Item marked as claimed!"); };
-  const handleRemoveWinner = (id)=>{ setWinners(prev=>prev.filter(w=>w.id!==id)); showToast("🗑️ Removed","warn"); };
+  const handleClaimWinner = async(id)=>{
+    try { await supabase.from("winners").update({claimed:true}).eq("id",id); } catch {}
+    setWinners(prev=>prev.map(w=>w.id===id?{...w,claimed:true}:w));
+    showToast("✅ Item marked as claimed!");
+  };
+
+  const handleRemoveWinner = async(id)=>{
+    try { await supabase.from("winners").delete().eq("id",id); } catch {}
+    setWinners(prev=>prev.filter(w=>w.id!==id));
+    showToast("🗑️ Removed","warn");
+  };
 
   // ── Excel Export ──────────────────────────────────────────────────────────
   const exportToExcel = (silent=false)=>{
@@ -1210,6 +1443,9 @@ export default function App() {
               ))}
             </div>
 
+            {/* ── BOSS SCHEDULE (dashboard) ── */}
+            <BossSchedulePanel />
+
             <div style={{background:"linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.07)",borderRadius:20,overflow:"hidden"}}>
               <div style={{padding:"16px 22px 12px",borderBottom:"1px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
@@ -1383,7 +1619,7 @@ export default function App() {
                 <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                   {EVENT_TYPES.map(et=>(
                     <div key={et.id} style={{background:`rgba(0,0,0,0.3)`,border:`1px solid ${et.color}40`,borderRadius:10,padding:"7px 14px",fontSize:12,color:et.color,fontWeight:700,display:"flex",alignItems:"center",gap:6}}>
-                      {et.icon} {et.label} <span style={{opacity:0.6,fontWeight:400}}>+{eventPoints[et.id]??et.defaultPoints}pts</span>
+                      {et.icon} {et.label} <span style={{opacity:0.6,fontWeight:400}}>{et.adminOnly?"Admin assigns":`+${eventPoints[et.id]??et.defaultPoints}pts`}</span>
                     </div>
                   ))}
                 </div>
@@ -1439,11 +1675,22 @@ export default function App() {
                                 style={{background:isMarking?"rgba(99,102,241,0.2)":"rgba(255,255,255,0.06)",border:`1px solid ${isMarking?"rgba(99,102,241,0.4)":"rgba(255,255,255,0.1)"}`,color:isMarking?"#a5b4fc":"#64748b",padding:"8px 14px",fontSize:12}}>
                                 {isMarking?"✅ Done":"📋 Mark"}
                               </button>
+                              <button className="btn" onClick={()=>{setShowAttCodeModal(ev.id);setGeneratedCode("");}}
+                                style={{background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.3)",color:"#fbbf24",padding:"8px 12px",fontSize:12}}
+                                title="Generate attendance verification code">
+                                🔑
+                              </button>
                               <button className="btn" onClick={()=>handleDeleteEvent(ev.id)}
                                 style={{background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.2)",color:"#f87171",padding:"8px 10px",fontSize:12}}>
                                 🗑️
                               </button>
                             </div>
+                          )}
+                          {!canManage&&(
+                            <button className="btn" onClick={()=>setShowMemberAttModal({eventId:ev.id,event:ev})}
+                              style={{background:ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"rgba(52,211,153,0.12)":"rgba(99,102,241,0.15)",border:`1px solid ${ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"rgba(52,211,153,0.35)":"rgba(99,102,241,0.35)"}`,color:ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"#34d399":"#a5b4fc",padding:"8px 14px",fontSize:12,fontWeight:700}}>
+                              {ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"✅ Checked In":"📲 Check In"}
+                            </button>
                           )}
                         </div>
                       </div>
@@ -1565,7 +1812,7 @@ export default function App() {
                     <div style={{fontSize:13,fontWeight:700,color:"#60a5fa"}}>Points-Based Bidding</div>
                     <div style={{fontSize:11.5,color:"#4a6a8a",marginTop:1}}>
                       Balance: <strong style={{color:"#60a5fa"}}>{myPoints.toLocaleString()} pts</strong>
-                      {currentUser?.role==="Recruit"&&<span style={{color:"#f87171",marginLeft:10}}>⚠️ Recruits cannot bid</span>}
+                      {currentUser?.role==="Recruit"&&<span style={{color:"#f87171",marginLeft:10}}>⚠️ Recruits cannot bid (7-day game rule)</span>}
                     </div>
                   </div>
                 </div>
@@ -1615,7 +1862,8 @@ export default function App() {
                   const myBid=item.bids?.find(b=>b.bidder===currentUser?.name);
                   const amWinning=item.highBidder===currentUser?.name;
                   const timeLeft=(item.endTime||0)-now;
-                  const canBid = myPoints >= item.minBid && !item.locked && currentUser?.role!=="Recruit" && !item.locked && timeLeft>0;
+                  const canBidRole = ["Leader","Elder","Member","Admin"].includes(currentUser?.role);
+                  const canBid = myPoints >= item.minBid && !item.locked && canBidRole && timeLeft>0;
                   const isImg = item.image && (item.image.startsWith("http")||item.image.startsWith("data"));
                   return(
                     <div key={item.id} className={`auction-card${item.locked?" locked":""}`}
@@ -1683,7 +1931,7 @@ export default function App() {
                       <div style={{display:"flex",gap:9,position:"relative",zIndex:1,flexWrap:"wrap"}}>
                         {!item.locked&&timeLeft>0&&<button className="btn" onClick={()=>{setBidModal(item);setBidAmount("");}} disabled={!canBid}
                           style={{flex:1,minWidth:100,background:canBid?`linear-gradient(135deg,${rs.color}30,${rs.color}15)`:"rgba(255,255,255,0.04)",border:`1px solid ${canBid?rs.color+"50":"rgba(255,255,255,0.1)"}`,color:canBid?rs.color:"#3d5070",padding:"10px",fontSize:13,opacity:canBid?1:0.7}}>
-                          {currentUser?.role==="Recruit"?"🔒 No Bid":"🏺 Place Bid"}
+                          {currentUser?.role==="Recruit"?"🔒 7-Day Wait":"🏺 Place Bid"}
                         </button>}
                         {isAdmin&&!item.locked&&item.highBidder&&(
                           <button className="btn" onClick={()=>handleAnnounceWinner(item)}
@@ -1717,7 +1965,12 @@ export default function App() {
                       <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:rs.color}} />
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
                         <div style={{display:"flex",alignItems:"center",gap:11}}>
-                          <div style={{width:48,height:48,borderRadius:12,background:rs.bg,border:`1px solid ${rs.color}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>{w.image}</div>
+                          <div style={{width:48,height:48,borderRadius:12,background:rs.bg,border:`1px solid ${rs.color}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,overflow:"hidden"}}>
+                            {w.image&&(w.image.startsWith("http")||w.image.startsWith("data"))
+                              ? <img src={w.image} alt={w.itemName} style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:12}} />
+                              : <span>{w.image||"🏆"}</span>
+                            }
+                          </div>
                           <div>
                             <div style={{fontSize:14,fontWeight:700,color:"#e2e8f0"}}>{w.itemName}</div>
                             <span style={{fontSize:10.5,color:rs.color,fontWeight:700}}>{w.rarity}</span>
@@ -1789,13 +2042,14 @@ export default function App() {
                 {EVENT_TYPES.map(et=>{
                   const pts = eventPoints[et.id] ?? et.defaultPoints;
                   return(
-                    <div key={et.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:10,padding:"10px 14px"}}>
+                    <div key={et.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,background:"rgba(255,255,255,0.02)",border:`1px solid ${et.adminOnly?"rgba(167,139,250,0.2)":"rgba(255,255,255,0.05)"}`,borderRadius:10,padding:"10px 14px"}}>
                       <span style={{fontSize:18,flexShrink:0}}>{et.icon}</span>
                       <span style={{flex:1,fontSize:13,color:"#e2e8f0",fontWeight:600}}>{et.label}</span>
+                      {et.adminOnly&&<span style={{fontSize:9,color:"#a78bfa",background:"rgba(167,139,250,0.1)",border:"1px solid rgba(167,139,250,0.25)",borderRadius:4,padding:"2px 6px",fontWeight:700}}>ADMIN ASSIGNS</span>}
                       {isAdmin||isLeader ? (
                         <div style={{display:"flex",alignItems:"center",gap:6}}>
-                          <button onClick={()=>setEventPoints(p=>({...p,[et.id]:Math.max(0,(p[et.id]??et.defaultPoints)-1)}))}
-                            style={{width:28,height:28,borderRadius:7,background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.3)",color:"#f87171",cursor:"pointer",fontSize:16,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                          {!et.adminOnly&&<button onClick={()=>setEventPoints(p=>({...p,[et.id]:Math.max(0,(p[et.id]??et.defaultPoints)-1)}))}
+                            style={{width:28,height:28,borderRadius:7,background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.3)",color:"#f87171",cursor:"pointer",fontSize:16,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>}
                           <input
                             type="number" min="0" max="999"
                             value={pts}
@@ -1803,15 +2057,15 @@ export default function App() {
                               const v = parseInt(e.target.value);
                               if(!isNaN(v)&&v>=0) setEventPoints(p=>({...p,[et.id]:v}));
                             }}
-                            style={{width:56,background:"rgba(255,255,255,0.07)",border:`1px solid ${et.color}50`,borderRadius:8,padding:"5px 6px",color:et.color,fontSize:15,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,textAlign:"center",outline:"none"}}
+                            style={{width:56,background:"rgba(255,255,255,0.07)",border:`1px solid ${et.color}50`,borderRadius:8,padding:"5px 6px",color:et.adminOnly?"#a78bfa":et.color,fontSize:15,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,textAlign:"center",outline:"none"}}
                           />
-                          <button onClick={()=>setEventPoints(p=>({...p,[et.id]:(p[et.id]??et.defaultPoints)+1}))}
-                            style={{width:28,height:28,borderRadius:7,background:"rgba(52,211,153,0.15)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",cursor:"pointer",fontSize:16,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                          {!et.adminOnly&&<button onClick={()=>setEventPoints(p=>({...p,[et.id]:(p[et.id]??et.defaultPoints)+1}))}
+                            style={{width:28,height:28,borderRadius:7,background:"rgba(52,211,153,0.15)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",cursor:"pointer",fontSize:16,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>}
                           <span style={{fontSize:10,color:"#3d5070",marginLeft:2}}>pts</span>
                         </div>
                       ) : (
-                        <div style={{background:`${et.color}18`,border:`1px solid ${et.color}40`,borderRadius:8,padding:"5px 14px",fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:et.color,minWidth:60,textAlign:"center"}}>
-                          +{pts}
+                        <div style={{background:`${et.color}18`,border:`1px solid ${et.color}40`,borderRadius:8,padding:"5px 14px",fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:et.adminOnly?"#a78bfa":et.color,minWidth:60,textAlign:"center"}}>
+                          {et.adminOnly?"—":`+${pts}`}
                         </div>
                       )}
                     </div>
@@ -1991,6 +2245,7 @@ export default function App() {
                   <button key={et.id} onClick={()=>setEventForm(p=>({...p,type:et.id,points:eventPoints[et.id]??et.defaultPoints,name:et.label}))}
                     style={{background:eventForm.type===et.id?`${et.color}20`:"rgba(255,255,255,0.04)",border:`1px solid ${eventForm.type===et.id?et.color+"60":"rgba(255,255,255,0.1)"}`,borderRadius:10,padding:"10px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:eventForm.type===et.id?et.color:"#64748b",fontSize:12,fontWeight:700,fontFamily:"'Exo 2',sans-serif",transition:"all 0.15s"}}>
                     <span style={{fontSize:16}}>{et.icon}</span>{et.label}
+                    {et.adminOnly&&<span style={{fontSize:9,color:"#a78bfa",marginLeft:"auto"}}>ADMIN</span>}
                   </button>
                 ))}
               </div>
@@ -2007,7 +2262,9 @@ export default function App() {
                 <input className="dark-input" value={eventForm.date} onChange={e=>setEventForm(p=>({...p,date:e.target.value}))} />
               </div>
               <div>
-                <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Points Awarded</label>
+                <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>
+                  Points Awarded {EVENT_TYPES.find(et=>et.id===eventForm.type)?.adminOnly&&<span style={{color:"#a78bfa",fontSize:9}}>(Admin assigns)</span>}
+                </label>
                 <input className="dark-input" type="number" value={eventForm.points} onChange={e=>setEventForm(p=>({...p,points:e.target.value}))} />
               </div>
             </div>
@@ -2027,6 +2284,64 @@ export default function App() {
             <div style={{display:"flex",gap:11}}>
               <button className="btn" onClick={()=>setShowCreateEvent(false)} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"11px"}}>Cancel</button>
               <button className="btn" onClick={handleCreateEvent} style={{flex:2,background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"11px",boxShadow:"0 4px 22px rgba(99,102,241,0.35)"}}>Create Event</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin: Generate Attendance Code Modal */}
+      {showAttCodeModal&&(
+        <div onClick={()=>{setShowAttCodeModal(null);setGeneratedCode("");}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",backdropFilter:"blur(8px)",zIndex:250,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div className="modal-box" onClick={e=>e.stopPropagation()}
+            style={{background:"#0a0c18",border:"1px solid rgba(251,191,36,0.3)",borderRadius:22,padding:"30px 32px",width:400,boxShadow:"0 32px 100px rgba(0,0,0,0.9)"}}>
+            <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:22,fontWeight:700,color:"#fbbf24",marginBottom:8,letterSpacing:"0.04em"}}>🔑 Attendance Code</h3>
+            <p style={{color:"#3d5070",fontSize:12,marginBottom:20,lineHeight:1.7}}>Generate a one-time 6-character code. Share it verbally with guild members during the event. Code expires in <strong style={{color:"#fbbf24"}}>10 minutes</strong>. Members enter it to self-check-in — prevents fake attendance.</p>
+            {generatedCode?(
+              <div style={{textAlign:"center",marginBottom:22}}>
+                <div style={{background:"rgba(251,191,36,0.08)",border:"2px dashed rgba(251,191,36,0.4)",borderRadius:16,padding:"24px",marginBottom:12}}>
+                  <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:44,fontWeight:700,color:"#fbbf24",letterSpacing:"0.2em"}}>{generatedCode}</div>
+                  <div style={{fontSize:11,color:"#3d5070",marginTop:6}}>Share this code with guild members in-game or Discord</div>
+                </div>
+                <div style={{background:"rgba(52,211,153,0.08)",border:"1px solid rgba(52,211,153,0.2)",borderRadius:10,padding:"10px",fontSize:11.5,color:"#34d399"}}>
+                  ✅ Code is active · Expires in 10 min · Used by members who check in
+                </div>
+              </div>
+            ):(
+              <div style={{textAlign:"center",marginBottom:22}}>
+                <div style={{fontSize:50,marginBottom:12}}>🎲</div>
+                <div style={{fontSize:13,color:"#64748b"}}>Click Generate to create a secure attendance code</div>
+              </div>
+            )}
+            <div style={{display:"flex",gap:11}}>
+              <button className="btn" onClick={()=>{setShowAttCodeModal(null);setGeneratedCode("");}} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"11px"}}>Close</button>
+              <button className="btn" onClick={()=>generateAttCode(showAttCodeModal)} style={{flex:2,background:"linear-gradient(135deg,#d97706,#fbbf24)",color:"#000",padding:"11px",fontWeight:800,fontSize:14}}>
+                {generatedCode?"🔄 New Code":"🔑 Generate Code"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Member: Self Check-In Modal */}
+      {showMemberAttModal&&(
+        <div onClick={()=>{setShowMemberAttModal(null);setAttCodeInput("");}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",backdropFilter:"blur(8px)",zIndex:250,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div className="modal-box" onClick={e=>e.stopPropagation()}
+            style={{background:"#0a0c18",border:"1px solid rgba(99,102,241,0.3)",borderRadius:22,padding:"30px 32px",width:400,boxShadow:"0 32px 100px rgba(0,0,0,0.9)"}}>
+            <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:22,fontWeight:700,color:"#a5b4fc",marginBottom:6,letterSpacing:"0.04em"}}>📲 Event Check-In</h3>
+            <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:4}}>{showMemberAttModal.event?.name}</div>
+            <p style={{color:"#3d5070",fontSize:12,marginBottom:22,lineHeight:1.7}}>Enter the 6-character attendance code shared by the Leader or Elder during the event.</p>
+            <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.08em"}}>Attendance Code</label>
+            <input className="dark-input" placeholder="e.g. A3F9XQ" value={attCodeInput} onChange={e=>setAttCodeInput(e.target.value.toUpperCase())}
+              onKeyDown={e=>e.key==="Enter"&&handleMemberSelfAttendance(showMemberAttModal.eventId,attCodeInput)}
+              style={{textAlign:"center",fontFamily:"'Rajdhani',sans-serif",fontSize:28,fontWeight:700,letterSpacing:"0.2em",marginBottom:20}} maxLength={6} />
+            <div style={{background:"rgba(99,102,241,0.07)",border:"1px solid rgba(99,102,241,0.2)",borderRadius:10,padding:"10px 14px",marginBottom:20,fontSize:11,color:"#6366f1",lineHeight:1.6}}>
+              🛡️ This code is only valid during the event and expires in 10 minutes. Each code can only be used once per member.
+            </div>
+            <div style={{display:"flex",gap:11}}>
+              <button className="btn" onClick={()=>{setShowMemberAttModal(null);setAttCodeInput("");}} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"11px"}}>Cancel</button>
+              <button className="btn" onClick={()=>handleMemberSelfAttendance(showMemberAttModal.eventId,attCodeInput)} style={{flex:2,background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"11px",boxShadow:"0 4px 22px rgba(99,102,241,0.35)"}}>
+                ✅ Check In
+              </button>
             </div>
           </div>
         </div>
@@ -2380,6 +2695,133 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ── Boss Schedule Panel (UTC+8, real-time clock) ─────────────────────────────
+const BOSS_SCHEDULE = [
+  { map:"Canyon of the World Tree Depth", ch:"Ch. 1", boss:"Twilight Overlord Rogvalt", days:[0,3,6], time:"21:00" },
+  { map:"Vale of Ragnarok",               ch:"Ch. 1", boss:"Nargrim",                   days:[1,6],   time:"21:05" },
+  { map:"Crossroads of Ragnarok",         ch:"Ch. 1", boss:"Faded Oath Vargreif",       days:[3,5],   time:"21:10" },
+  { map:"(Inter-Server) Folkvang 5F",     ch:"Ch. 1", boss:"Twilight Disaster Nirva",   days:[0,1,5], time:"21:15" },
+  { map:"Forgotten Holy Temple",          ch:"Ch. 1", boss:"Phantom Sovereign Skoll",   days:[0,2,4,6],time:"21:20"},
+  { map:"Myrkrheim",                      ch:"Ch. 1", boss:"Warlord Hrungner",           days:[2,5],   time:"21:30" },
+  { map:"King's Tomb",                    ch:"Ch. 1", boss:"Gravebinder Ulfgar",         days:[1,3,6], time:"21:45" },
+  { map:"Lindwurm Cave",                  ch:"Ch. 1", boss:"Lindwurm the Ancient",       days:[0,4],   time:"22:00" },
+  { map:"Hilder's Labyrinth",             ch:"Ch. 1", boss:"Chaos Herald Draven",        days:[2,5,6], time:"22:15" },
+  { map:"Twisted Plateau",                ch:"Ch. 1", boss:"Stormbringer Valdris",        days:[1,3,4], time:"22:30" },
+];
+const DAY_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+function BossSchedulePanel() {
+  const [collapsed, setCollapsed] = useState(false);
+  const [nowUTC8, setNowUTC8] = useState(()=>new Date(Date.now() + 8*3600000));
+
+  useEffect(()=>{
+    const t = setInterval(()=>setNowUTC8(new Date(Date.now() + 8*3600000)), 1000);
+    return ()=>clearInterval(t);
+  },[]);
+
+  const todayUTC8   = nowUTC8.getUTCDay(); // 0=Sun
+  const curH        = nowUTC8.getUTCHours();
+  const curM        = nowUTC8.getUTCMinutes();
+  const curS        = nowUTC8.getUTCSeconds();
+  const nowMins     = curH * 60 + curM;
+
+  // Find next upcoming boss today or next days
+  const getCountdown = (boss)=>{
+    const [bh, bm] = boss.time.split(":").map(Number);
+    const bossMins = bh * 60 + bm;
+    // Check if boss spawns today and hasn't passed yet
+    if(boss.days.includes(todayUTC8) && nowMins < bossMins) {
+      const diff = (bossMins - nowMins) * 60 - curS;
+      const h = Math.floor(diff/3600), m = Math.floor((diff%3600)/60), s = diff%60;
+      return { label:`${h}h ${m}m ${s}s`, soon: diff < 1800, active: diff < 300 };
+    }
+    return null;
+  };
+
+  const todayBosses = BOSS_SCHEDULE.filter(b=>b.days.includes(todayUTC8));
+  const otherBosses = BOSS_SCHEDULE.filter(b=>!b.days.includes(todayUTC8));
+
+  const clockStr = `${String(curH).padStart(2,"0")}:${String(curM).padStart(2,"0")}:${String(curS).padStart(2,"0")}`;
+
+  return (
+    <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(251,191,36,0.18)",borderRadius:18,marginBottom:22,overflow:"hidden",transition:"all 0.3s"}}>
+      {/* Header — clickable to collapse */}
+      <div onClick={()=>setCollapsed(p=>!p)}
+        style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",borderBottom:collapsed?"none":"1px solid rgba(251,191,36,0.1)",cursor:"pointer",background:"rgba(251,191,36,0.04)",userSelect:"none"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <span style={{fontSize:18}}>📅</span>
+          <div>
+            <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:"#fbbf24",letterSpacing:"0.06em"}}>BOSS SCHEDULE · UTC+8</div>
+            <div style={{fontSize:10.5,color:"#3d5070",marginTop:1}}>{todayBosses.length} bosses today · Respawn resets daily 12:00 AM UTC+8</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:14}}>
+          <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:15,fontWeight:700,color:"#fbbf24",letterSpacing:"0.08em",background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.25)",padding:"3px 10px",borderRadius:7}}>{clockStr}</span>
+          <span style={{color:"#3d5070",fontSize:14,transition:"transform 0.25s",display:"inline-block",transform:collapsed?"rotate(0deg)":"rotate(180deg)"}}>▾</span>
+        </div>
+      </div>
+
+      {/* Body */}
+      {!collapsed&&(
+        <div style={{padding:"14px 18px 18px"}}>
+          {/* Today's bosses */}
+          <div style={{fontSize:10,fontWeight:700,color:"#fbbf24",letterSpacing:"0.1em",marginBottom:8,textTransform:"uppercase"}}>
+            {DAY_LABELS[todayUTC8]} — Today
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:16}}>
+            {todayBosses.length === 0 && (
+              <div style={{color:"#3d5070",fontSize:12,padding:"10px 0"}}>No bosses scheduled today.</div>
+            )}
+            {todayBosses.map((b,i)=>{
+              const cd = getCountdown(b);
+              const [bh, bm] = b.time.split(":").map(Number);
+              const passed = nowMins >= bh*60+bm;
+              return (
+                <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:cd?.active?"rgba(251,191,36,0.1)":cd?.soon?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.025)",border:`1px solid ${cd?.active?"rgba(251,191,36,0.4)":cd?.soon?"rgba(251,191,36,0.2)":"rgba(255,255,255,0.06)"}`,borderRadius:10,padding:"9px 13px",transition:"all 0.3s"}}>
+                  <div style={{width:6,height:6,borderRadius:"50%",background:passed?"#475569":cd?.active?"#fbbf24":"#34d399",boxShadow:cd?.active?"0 0 8px #fbbf24":passed?"none":"0 0 6px #34d399",flexShrink:0}} />
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:700,color:"#e2e8f0",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.boss}</div>
+                    <div style={{fontSize:10,color:"#3d5070",marginTop:1}}>{b.map} · {b.ch}</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:13,fontWeight:700,color:"#fbbf24"}}>{b.time}</div>
+                    {cd ? (
+                      <div style={{fontSize:9.5,color:cd.active?"#fbbf24":cd.soon?"#fb923c":"#34d399",fontWeight:700}}>{cd.active?"⚠️ SOON ":""}{cd.label}</div>
+                    ) : (
+                      <div style={{fontSize:9.5,color:passed?"#475569":"#3d5070"}}>{passed?"✓ Done":""}</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Other days — compact */}
+          <div style={{fontSize:10,fontWeight:700,color:"#3d5070",letterSpacing:"0.1em",marginBottom:8,textTransform:"uppercase"}}>Other Days</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:6}}>
+            {otherBosses.map((b,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,padding:"7px 11px"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.boss}</div>
+                  <div style={{fontSize:9.5,color:"#3d5070",marginTop:1}}>{b.map}</div>
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:12,color:"#64748b"}}>{b.time}</div>
+                  <div style={{fontSize:9,color:"#2d3a52"}}>{b.days.map(d=>DAY_LABELS[d]).join(" · ")}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{marginTop:12,padding:"8px 12px",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,fontSize:10.5,color:"#3d5070",lineHeight:1.6}}>
+            ⚠️ Bosses appear <strong style={{color:"#94a3b8"}}>once per day</strong> — timer cannot be changed after boss appears. Only conquerors may change respawn time (once/week, resets Tue 5AM UTC+8). Cannot be set between <strong style={{color:"#94a3b8"}}>10:30PM – 11:59PM</strong>.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
