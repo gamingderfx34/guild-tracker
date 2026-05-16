@@ -1166,6 +1166,9 @@ export default function App() {
                 <span>Boss timers <strong>persist across sessions</strong> — they continue counting down even after refresh. Elapsed time shown when boss is LIVE.</span>
               </div>
 
+              {/* ── OVERWORLD MAPS ── */}
+              <OverworldMapsPanel canManage={canManage} />
+
               {/* Field Boss Schedule */}
               <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:"18px 20px",marginBottom:22}}>
                 <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:"#f87171",marginBottom:12,letterSpacing:"0.04em"}}>👹 Field Boss Schedule (UTC+8)</div>
@@ -1201,40 +1204,16 @@ export default function App() {
                 showRespawnEdit={false}
               />
 
-              {/* ── FOLKVANG NORMAL ── */}
-              <BossGroupPanel
-                title="🏔️ FOLKVANG BOSS — Normal"
-                subtitle="5 Floors (1F–5F) · Normal server"
-                color="#f97316"
-                bosses={folkvangNormal}
-                groupKey="folkvang_normal"
+              {/* ── FOLKVANG VALHALLA DUNGEON ── */}
+              <FolkvangDungeonCard
+                folkvangNormal={folkvangNormal}
+                folkvangInterserver={folkvangInterserver}
                 canManage={canManage}
                 killFlash={killFlash}
-                onKill={(id)=>handleMarkKilledGroup(id,"folkvang_normal")}
-                onReset={(id)=>handleResetToZero(id,"folkvang_normal")}
-                onSetTimer={(id)=>{setBossTimerModal({id,group:"folkvang_normal"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
-                onImage={(id)=>{setBossImageModal({id,group:"folkvang_normal"});bossImgRef.current?.click();}}
-                onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"folkvang_normal",secs)}
-                showRespawnEdit={true}
-                floorLabels={true}
-              />
-
-              {/* ── FOLKVANG INTERSERVER ── */}
-              <BossGroupPanel
-                title="🌐 FOLKVANG BOSS — Interserver"
-                subtitle="5 Floors (1F–5F) · Interserver"
-                color="#e879f9"
-                bosses={folkvangInterserver}
-                groupKey="folkvang_interserver"
-                canManage={canManage}
-                killFlash={killFlash}
-                onKill={(id)=>handleMarkKilledGroup(id,"folkvang_interserver")}
-                onReset={(id)=>handleResetToZero(id,"folkvang_interserver")}
-                onSetTimer={(id)=>{setBossTimerModal({id,group:"folkvang_interserver"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
-                onImage={(id)=>{setBossImageModal({id,group:"folkvang_interserver"});bossImgRef.current?.click();}}
-                onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"folkvang_interserver",secs)}
-                showRespawnEdit={true}
-                floorLabels={true}
+                onKill={(id,group)=>handleMarkKilledGroup(id,group)}
+                onReset={(id,group)=>handleResetToZero(id,group)}
+                onSetTimer={(id,group)=>{setBossTimerModal({id,group});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
+                onImage={(id,group)=>{setBossImageModal({id,group});bossImgRef.current?.click();}}
               />
 
               {/* ── CANYON OF NIDAVELLIR ── */}
@@ -2212,6 +2191,265 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ── Overworld Maps Panel ─────────────────────────────────────────────────────
+const OVERWORLD_MAPS = [
+  {
+    id:"myrkrheim", name:"MYRKRHEIM", type:"Open World", channels:"Unlimited",
+    status:"LIVE", border:"#3b82f6", glow:"rgba(59,130,246,0.18)", icon:"🌍", tag:"open-world",
+    desc:"Main overworld hunting zone",
+  },
+  {
+    id:"canyon", name:"CANYON OF NIDAVELLIR", type:"Inter-Server", channels:"Shared",
+    status:"LIVE", border:"#a855f7", glow:"rgba(168,85,247,0.18)", icon:"🏜️", tag:"inter-server",
+    desc:"Cross-server PvP canyon zone",
+  },
+  {
+    id:"lindwurm", name:"LINDWURM CAVE", type:"Open World", channels:"Unlimited",
+    status:"LIVE", border:"#3b82f6", glow:"rgba(59,130,246,0.18)", icon:"🦎", tag:"open-world",
+    desc:"Lv.65+ · Req [Main] 26-2 clear",
+  },
+  {
+    id:"kingstomb", name:"KINGSTOMB", type:"Open World", channels:"Unlimited",
+    status:"LIVE", border:"#3b82f6", glow:"rgba(59,130,246,0.18)", icon:"⚰️", tag:"open-world",
+    desc:"High-level overworld area",
+  },
+];
+
+const MAP_TYPE_BADGE = {
+  "Open World":    { bg:"rgba(59,130,246,0.18)",  color:"#60a5fa",  border:"rgba(59,130,246,0.4)"  },
+  "Inter-Server":  { bg:"rgba(168,85,247,0.18)",  color:"#c084fc",  border:"rgba(168,85,247,0.4)"  },
+  "Dungeon":       { bg:"rgba(245,158,11,0.18)",   color:"#fbbf24",  border:"rgba(245,158,11,0.4)"  },
+  "Normal":        { bg:"rgba(52,211,153,0.14)",   color:"#34d399",  border:"rgba(52,211,153,0.35)" },
+};
+const CH_BADGE = {
+  "Unlimited": { bg:"rgba(6,182,212,0.15)",  color:"#22d3ee",  border:"rgba(6,182,212,0.35)"  },
+  "Shared":    { bg:"rgba(168,85,247,0.15)", color:"#c084fc",  border:"rgba(168,85,247,0.35)" },
+};
+
+function MapTypeBadge({ type }) {
+  const s = MAP_TYPE_BADGE[type] || MAP_TYPE_BADGE["Open World"];
+  return (
+    <span style={{display:"inline-flex",alignItems:"center",padding:"3px 9px",borderRadius:6,background:s.bg,color:s.color,border:`1px solid ${s.border}`,fontSize:10,fontWeight:700,letterSpacing:"0.06em"}}>{type}</span>
+  );
+}
+
+function OverworldMapsPanel({ canManage }) {
+  const [expandedMap, setExpandedMap] = useState(null);
+  const [mapStatuses, setMapStatuses] = useState(()=>{
+    const o={};
+    OVERWORLD_MAPS.forEach(m=>{o[m.id]="LIVE";});
+    return o;
+  });
+
+  const glowByTag = { "open-world":"0 0 30px rgba(59,130,246,0.18)", "inter-server":"0 0 30px rgba(168,85,247,0.18)" };
+
+  return (
+    <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"18px 20px",marginBottom:22}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
+        <div>
+          <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.06em"}}>🗺️ OVERWORLD MAPS</div>
+          <div style={{fontSize:11,color:"#3d5070",marginTop:2}}>Live open-world and inter-server zones</div>
+        </div>
+        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+          {[["Open World","#60a5fa"],["Inter-Server","#c084fc"],["Channels","#22d3ee"]].map(([lbl,c])=>(
+            <span key={lbl} style={{fontSize:10,color:c,background:`${c}18`,border:`1px solid ${c}35`,borderRadius:5,padding:"2px 8px",fontWeight:700,letterSpacing:"0.06em"}}>{lbl}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* Map Cards Grid */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(230px,1fr))",gap:12}}>
+        {OVERWORLD_MAPS.map(map=>{
+          const status = mapStatuses[map.id] || "LIVE";
+          const isLive = status === "LIVE";
+          const isExpanded = expandedMap === map.id;
+          const typeBadge = MAP_TYPE_BADGE[map.type] || MAP_TYPE_BADGE["Open World"];
+          const chBadge = CH_BADGE[map.channels] || CH_BADGE["Unlimited"];
+          return (
+            <div key={map.id}
+              style={{
+                background:"rgba(255,255,255,0.03)",
+                border:`1px solid ${map.border}40`,
+                borderRadius:14,
+                padding:"14px 16px",
+                position:"relative",
+                overflow:"hidden",
+                boxShadow:glowByTag[map.tag],
+                transition:"all 0.22s",
+                cursor:"pointer",
+              }}
+              onClick={()=>setExpandedMap(isExpanded ? null : map.id)}
+            >
+              {/* Left color strip */}
+              <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:map.border,borderRadius:"3px 0 0 3px"}} />
+              {/* Glow bg blob */}
+              <div style={{position:"absolute",bottom:-20,right:-20,width:80,height:80,borderRadius:"50%",background:map.glow,filter:"blur(20px)",pointerEvents:"none"}} />
+
+              {/* Map name + icon */}
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:10}}>
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:4}}>
+                    <span style={{fontSize:16}}>{map.icon}</span>
+                    <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,color:"#f1f5f9",letterSpacing:"0.05em"}}>{map.name}</span>
+                  </div>
+                  <div style={{fontSize:10,color:"#3d5070",marginLeft:23}}>{map.desc}</div>
+                </div>
+                {/* Status dot + LIVE badge */}
+                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,flexShrink:0}}>
+                  <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px",borderRadius:6,background:isLive?"rgba(52,211,153,0.15)":"rgba(100,116,139,0.15)",border:`1px solid ${isLive?"rgba(52,211,153,0.4)":"rgba(100,116,139,0.3)"}`,fontSize:9.5,fontWeight:700,color:isLive?"#34d399":"#64748b",letterSpacing:"0.07em"}}>
+                    <span style={{width:5,height:5,borderRadius:"50%",background:isLive?"#34d399":"#475569",flexShrink:0,boxShadow:isLive?"0 0 6px #34d399":"none"}} />
+                    {status}
+                  </span>
+                </div>
+              </div>
+
+              {/* Type + Channel badges */}
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                <MapTypeBadge type={map.type} />
+                <span style={{display:"inline-flex",alignItems:"center",padding:"3px 9px",borderRadius:6,background:chBadge.bg,color:chBadge.color,border:`1px solid ${chBadge.border}`,fontSize:10,fontWeight:700,letterSpacing:"0.06em"}}>
+                  CH: {map.channels}
+                </span>
+              </div>
+
+              {/* Action row — always visible on expand, hover otherwise */}
+              {canManage && (
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",borderTop:"1px solid rgba(255,255,255,0.05)",paddingTop:8,marginTop:2}}>
+                  {["LIVE","MAINTENANCE","CLOSED"].map(s=>(
+                    <button key={s}
+                      onClick={e=>{e.stopPropagation();setMapStatuses(prev=>({...prev,[map.id]:s}));}}
+                      style={{
+                        fontSize:9,fontWeight:700,letterSpacing:"0.05em",
+                        padding:"3px 8px",borderRadius:5,cursor:"pointer",fontFamily:"'Exo 2',sans-serif",
+                        background:status===s?(s==="LIVE"?"rgba(52,211,153,0.2)":s==="MAINTENANCE"?"rgba(251,191,36,0.2)":"rgba(239,68,68,0.2)"):"rgba(255,255,255,0.04)",
+                        border:`1px solid ${status===s?(s==="LIVE"?"rgba(52,211,153,0.45)":s==="MAINTENANCE"?"rgba(251,191,36,0.45)":"rgba(239,68,68,0.45)"):"rgba(255,255,255,0.1)"}`,
+                        color:status===s?(s==="LIVE"?"#34d399":s==="MAINTENANCE"?"#fbbf24":"#f87171"):"#3d5070",
+                        transition:"all 0.15s",
+                      }}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Folkvang / Valhalla Dungeon Card (expandable, floors + modes) ─────────────
+function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, killFlash, onKill, onReset, onSetTimer, onImage }) {
+  const [expandedMode, setExpandedMode] = useState("interserver"); // "interserver" | "normal" | null
+  const [collapsed, setCollapsed] = useState(false);
+
+  const modes = [
+    { key:"interserver", label:"INTER-SERVER", color:"#e879f9", border:"rgba(232,121,249,0.35)", bg:"rgba(232,121,249,0.08)", bosses:folkvangInterserver },
+    { key:"normal",      label:"NORMAL",       color:"#f97316", border:"rgba(249,115,22,0.35)",  bg:"rgba(249,115,22,0.08)",  bosses:folkvangNormal },
+  ];
+
+  const allBosses = [...folkvangNormal, ...folkvangInterserver];
+  const liveCount = allBosses.filter(b=>b.secs===0).length;
+  const totalCount = allBosses.length;
+
+  return (
+    <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(245,158,11,0.35)",borderRadius:18,overflow:"hidden",marginBottom:22,boxShadow:"0 0 40px rgba(245,158,11,0.06)"}}>
+      {/* Header */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:collapsed?"none":"1px solid rgba(255,255,255,0.06)",cursor:"pointer",background:"rgba(245,158,11,0.04)"}}
+        onClick={()=>setCollapsed(p=>!p)}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{width:40,height:40,borderRadius:10,background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.35)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>🏔️</div>
+          <div>
+            <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:"#fbbf24",letterSpacing:"0.06em"}}>FOLKVANG · VALHALLA DUNGEON</div>
+            <div style={{fontSize:10.5,color:"#3d5070",marginTop:2}}>5 Floors · Normal + Inter-Server · Respawn ~1h45m</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <MapTypeBadge type="Dungeon" />
+            <span style={{fontSize:9.5,padding:"3px 9px",borderRadius:6,background:"rgba(52,211,153,0.13)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",fontWeight:700,letterSpacing:"0.06em"}}>{liveCount}/{totalCount} LIVE</span>
+          </div>
+          <span style={{color:"#3d5070",fontSize:14,transition:"transform 0.2s",display:"inline-block",transform:collapsed?"rotate(0deg)":"rotate(180deg)"}}>▾</span>
+        </div>
+      </div>
+
+      {!collapsed && (
+        <div style={{padding:"16px 20px"}}>
+          {/* Mode tabs */}
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            {modes.map(mode=>(
+              <button key={mode.key}
+                onClick={()=>setExpandedMode(expandedMode===mode.key?null:mode.key)}
+                style={{
+                  display:"flex",alignItems:"center",gap:7,
+                  padding:"7px 16px",borderRadius:9,cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:11.5,letterSpacing:"0.05em",
+                  background:expandedMode===mode.key?mode.bg:"rgba(255,255,255,0.04)",
+                  border:`1px solid ${expandedMode===mode.key?mode.border:"rgba(255,255,255,0.1)"}`,
+                  color:expandedMode===mode.key?mode.color:"#3d5070",
+                  transition:"all 0.18s",
+                }}>
+                <span style={{width:7,height:7,borderRadius:"50%",background:expandedMode===mode.key?mode.color:"#3d5070",flexShrink:0}} />
+                {mode.label}
+                <span style={{fontSize:9,opacity:0.7,fontWeight:400}}>5F</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Floor rows per active mode */}
+          {modes.map(mode=>{
+            if(expandedMode !== mode.key) return null;
+            return (
+              <div key={mode.key} style={{background:"rgba(255,255,255,0.02)",borderRadius:12,border:`1px solid ${mode.border}`,overflow:"hidden"}}>
+                <div style={{background:mode.bg,padding:"8px 16px",borderBottom:`1px solid ${mode.border}`,display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:11,fontWeight:700,color:mode.color,letterSpacing:"0.07em"}}>{mode.label}</span>
+                  <span style={{fontSize:10,color:"#3d5070"}}>· 5 Floors</span>
+                </div>
+                {mode.bosses.map((b,idx)=>{
+                  const st = bossStatus(b.secs);
+                  const bs = BOSS_STATUS_STYLE[st];
+                  const isLive = b.secs === 0;
+                  return (
+                    <div key={b.id} style={{
+                      display:"flex",alignItems:"center",gap:10,padding:"11px 16px",
+                      borderBottom:idx<mode.bosses.length-1?`1px solid rgba(255,255,255,0.04)`:"none",
+                      background:killFlash===b.id?"rgba(239,68,68,0.15)":"transparent",
+                      transition:"background 0.3s",
+                    }}>
+                      {/* Floor label */}
+                      <div style={{width:32,flexShrink:0,fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,color:mode.color,textAlign:"center"}}>{b.floor}</div>
+                      {/* Status dot */}
+                      <div style={{width:8,height:8,borderRadius:"50%",background:isLive?"#34d399":"#f59e0b",boxShadow:isLive?"0 0 8px #34d399":"0 0 8px #f59e0b",flexShrink:0}} />
+                      {/* Timer */}
+                      <div style={{flex:1}}>
+                        <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:20,fontWeight:700,color:isLive?"#34d399":mode.color,letterSpacing:"0.04em"}}>{fmtSecs(b.secs)}</span>
+                        {isLive && b.elapsed>0 && <span style={{fontSize:9.5,color:"#34d399",marginLeft:8}}>+{fmtSecs(b.elapsed)}</span>}
+                      </div>
+                      {/* Status badge */}
+                      <span style={{display:"inline-flex",padding:"2px 8px",borderRadius:5,background:bs.bg,color:bs.color,border:`1px solid ${bs.border}`,fontSize:9.5,fontWeight:700,flexShrink:0}}>{st}</span>
+                      {/* Action buttons */}
+                      {canManage && (
+                        <div style={{display:"flex",gap:5,flexShrink:0}}>
+                          <button className="ghost-btn" onClick={()=>onKill(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
+                            style={{fontSize:9.5,padding:"3px 8px",color:mode.color,borderColor:`${mode.color}40`}}>☠️ Kill</button>
+                          <button className="ghost-btn" onClick={()=>onReset(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
+                            style={{fontSize:9.5,padding:"3px 8px"}}>🔴 Live</button>
+                          <button className="ghost-btn" onClick={()=>onSetTimer(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
+                            style={{fontSize:9.5,padding:"3px 8px"}}>⏱</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
