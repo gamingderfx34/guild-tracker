@@ -115,10 +115,10 @@ const INIT_AUCTION_ITEMS = [
 // ── Event types with default points ─────────────────────────────────────────
 const EVENT_TYPES = [
   { id:"sindri",    label:"Sindri Battle",    icon:"⚔️",  defaultPoints:10, color:"#f59e0b" },
-  { id:"server",    label:"Server Battle",    icon:"🌐",  defaultPoints:2,  color:"#60a5fa" },
-  { id:"fieldboss", label:"Field Boss",       icon:"👹",  defaultPoints:1,  color:"#f87171" },
-  { id:"sanctuary", label:"Guild Sanctuary",  icon:"🏛️",  defaultPoints:3,  color:"#34d399" },
-  { id:"ymir",      label:"Ymir Cup",         icon:"🏆",  defaultPoints:0,  color:"#a78bfa" },
+  { id:"server",    label:"Server Battle",    icon:"🌐",  defaultPoints:5,  color:"#60a5fa" },
+  { id:"fieldboss", label:"Field Boss",       icon:"👹",  defaultPoints:5,  color:"#f87171" },
+  { id:"sanctuary", label:"Guild Sanctuary",  icon:"🏛️",  defaultPoints:5,  color:"#34d399" },
+  { id:"ymir",      label:"Ymir Cup",         icon:"🏆",  defaultPoints:5,  color:"#a78bfa" },
 ];
 
 // ── Field Boss schedule (from game) ─────────────────────────────────────────
@@ -270,7 +270,13 @@ export default function App() {
   const [showCreateEvent, setShowCreateEvent] = useState(false);
   const [eventForm, setEventForm]     = useState({ type:"sindri", name:"", date:today, notes:"", server:"", points:10 });
   const [markEventId, setMarkEventId] = useState(null); // event being marked for attendance
-  const [eventPoints, setEventPoints] = useState({}); // editable per-event-type points
+  const [eventPoints, setEventPoints] = useState(()=>{
+    const saved = lsGet("rampageEventPoints", {});
+    // Merge saved with defaults so new event types always have a value
+    const merged = {};
+    EVENT_TYPES.forEach(et=>{ merged[et.id] = saved[et.id] ?? et.defaultPoints; });
+    return merged;
+  });
 
   const fileRef    = useRef(null);
   const bossImgRef = useRef(null);
@@ -288,6 +294,7 @@ export default function App() {
   useEffect(()=>{ lsSet("rampageAuction", auctionItems); }, [auctionItems]);
   useEffect(()=>{ lsSet("rampageWinners", winners); }, [winners]);
   useEffect(()=>{ lsSet("rampageEvents", events); }, [events]);
+  useEffect(()=>{ lsSet("rampageEventPoints", eventPoints); }, [eventPoints]);
 
   // ── Sync boss timer with real time on load ────────────────────────────────
   useEffect(()=>{
@@ -744,14 +751,15 @@ export default function App() {
       date: eventForm.date,
       notes: eventForm.notes,
       server: eventForm.server,
-      points: parseInt(eventForm.points) || evType?.defaultPoints || 5,
-      attendance: {}, // memberId -> true/false
+      points: parseInt(eventForm.points) || eventPoints[eventForm.type] || evType?.defaultPoints || 5,
+      attendance: {},
       createdBy: currentUser?.name,
       createdAt: new Date().toISOString(),
     };
     setEvents(prev=>[ev,...prev]);
     setShowCreateEvent(false);
-    setEventForm({ type:"sindri", name:"", date:today, notes:"", server:"", points:10 });
+    const firstType = EVENT_TYPES[0];
+    setEventForm({ type:"sindri", name:"", date:today, notes:"", server:"", points: eventPoints["sindri"] || firstType?.defaultPoints || 10 });
     showToast(`✅ Event "${ev.name}" created!`);
   };
 
@@ -1371,7 +1379,7 @@ export default function App() {
                 <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                   {EVENT_TYPES.map(et=>(
                     <div key={et.id} style={{background:`rgba(0,0,0,0.3)`,border:`1px solid ${et.color}40`,borderRadius:10,padding:"7px 14px",fontSize:12,color:et.color,fontWeight:700,display:"flex",alignItems:"center",gap:6}}>
-                      {et.icon} {et.label} <span style={{opacity:0.6,fontWeight:400}}>+{et.defaultPoints}pts</span>
+                      {et.icon} {et.label} <span style={{opacity:0.6,fontWeight:400}}>+{eventPoints[et.id]??et.defaultPoints}pts</span>
                     </div>
                   ))}
                 </div>
@@ -1770,18 +1778,52 @@ export default function App() {
 
               {/* Event Points Config */}
               <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"22px"}}>
-                <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#f1f5f9",marginBottom:16,letterSpacing:"0.04em"}}>🏆 Event Points Config</h3>
-                <p style={{color:"#3d5070",fontSize:11.5,marginBottom:14}}>Default points awarded per event type (editable per event when creating).</p>
-                {EVENT_TYPES.map(et=>(
-                  <div key={et.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:11}}>
-                    <span style={{fontSize:16,width:24}}>{et.icon}</span>
-                    <span style={{flex:1,fontSize:12.5,color:"#94a3b8",fontWeight:600}}>{et.label}</span>
-                    <div style={{background:`${et.color}18`,border:`1px solid ${et.color}40`,borderRadius:8,padding:"5px 14px",fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:et.color,minWidth:60,textAlign:"center"}}>
-                      +{et.defaultPoints}
+                <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#f1f5f9",marginBottom:4,letterSpacing:"0.04em"}}>🏆 Event Points Config</h3>
+                <p style={{color:"#3d5070",fontSize:11.5,marginBottom:16,lineHeight:1.6}}>
+                  {isAdmin||isLeader ? "Edit default points per event type. Saved instantly." : "Default points awarded per event type."}
+                </p>
+                {EVENT_TYPES.map(et=>{
+                  const pts = eventPoints[et.id] ?? et.defaultPoints;
+                  return(
+                    <div key={et.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:10,padding:"10px 14px"}}>
+                      <span style={{fontSize:18,flexShrink:0}}>{et.icon}</span>
+                      <span style={{flex:1,fontSize:13,color:"#e2e8f0",fontWeight:600}}>{et.label}</span>
+                      {isAdmin||isLeader ? (
+                        <div style={{display:"flex",alignItems:"center",gap:6}}>
+                          <button onClick={()=>setEventPoints(p=>({...p,[et.id]:Math.max(0,(p[et.id]??et.defaultPoints)-1)}))}
+                            style={{width:28,height:28,borderRadius:7,background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.3)",color:"#f87171",cursor:"pointer",fontSize:16,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                          <input
+                            type="number" min="0" max="999"
+                            value={pts}
+                            onChange={e=>{
+                              const v = parseInt(e.target.value);
+                              if(!isNaN(v)&&v>=0) setEventPoints(p=>({...p,[et.id]:v}));
+                            }}
+                            style={{width:56,background:"rgba(255,255,255,0.07)",border:`1px solid ${et.color}50`,borderRadius:8,padding:"5px 6px",color:et.color,fontSize:15,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,textAlign:"center",outline:"none"}}
+                          />
+                          <button onClick={()=>setEventPoints(p=>({...p,[et.id]:(p[et.id]??et.defaultPoints)+1}))}
+                            style={{width:28,height:28,borderRadius:7,background:"rgba(52,211,153,0.15)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",cursor:"pointer",fontSize:16,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                          <span style={{fontSize:10,color:"#3d5070",marginLeft:2}}>pts</span>
+                        </div>
+                      ) : (
+                        <div style={{background:`${et.color}18`,border:`1px solid ${et.color}40`,borderRadius:8,padding:"5px 14px",fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:et.color,minWidth:60,textAlign:"center"}}>
+                          +{pts}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
-                <p style={{color:"#3d5070",fontSize:11,marginTop:8}}>💡 To change default points, update EVENT_TYPES in the code, or override per event.</p>
+                  );
+                })}
+                {(isAdmin||isLeader)&&(
+                  <button className="btn" onClick={()=>{
+                    // Reset all to defaults
+                    const defaults = {};
+                    EVENT_TYPES.forEach(et=>{ defaults[et.id]=et.defaultPoints; });
+                    setEventPoints(defaults);
+                    showToast("🔄 Points reset to defaults");
+                  }} style={{width:"100%",marginTop:4,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"9px",fontSize:12}}>
+                    🔄 Reset to Defaults
+                  </button>
+                )}
               </div>
 
               {/* Excel Export */}
@@ -1942,7 +1984,7 @@ export default function App() {
               <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Event Type</label>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 {EVENT_TYPES.map(et=>(
-                  <button key={et.id} onClick={()=>setEventForm(p=>({...p,type:et.id,points:et.defaultPoints,name:et.label}))}
+                  <button key={et.id} onClick={()=>setEventForm(p=>({...p,type:et.id,points:eventPoints[et.id]??et.defaultPoints,name:et.label}))}
                     style={{background:eventForm.type===et.id?`${et.color}20`:"rgba(255,255,255,0.04)",border:`1px solid ${eventForm.type===et.id?et.color+"60":"rgba(255,255,255,0.1)"}`,borderRadius:10,padding:"10px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:eventForm.type===et.id?et.color:"#64748b",fontSize:12,fontWeight:700,fontFamily:"'Exo 2',sans-serif",transition:"all 0.15s"}}>
                     <span style={{fontSize:16}}>{et.icon}</span>{et.label}
                   </button>
