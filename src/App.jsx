@@ -49,10 +49,13 @@ const DEFAULT_MYRKRHEIM = [
 // FOLKVANG floors: 1F-5F, Normal + Interserver
 const FOLKVANG_FLOORS = ["1F","2F","3F","4F","5F"];
 function mkFolkvang(type, color) {
+  // Interserver = 2h (7200s), Normal = 1h45m (6300s)
+  const defaultRespawn = type === "interserver" ? 7200 : 6300;
   return FOLKVANG_FLOORS.map((fl,i)=>({
     id:`fv_${type}_${fl}`, name:`Folkvang ${fl}`, floor:fl, type, secs:0, elapsed:0,
-    respawnSecs:6300, // 1h45m default
+    respawnSecs: defaultRespawn,
     channel:1, color, image:null, group:`folkvang_${type}`,
+    killed_at: null, paused: false,
   }));
 }
 const DEFAULT_FOLKVANG_NORMAL = mkFolkvang("normal","#f97316");
@@ -114,11 +117,11 @@ const INIT_AUCTION_ITEMS = [
 
 // ── Event types with default points ─────────────────────────────────────────
 const EVENT_TYPES = [
-  { id:"sindri",    label:"Sindri Battle",    icon:"⚔️",  defaultPoints:10, color:"#f59e0b" },
-  { id:"server",    label:"Server Battle",    icon:"🌐",  defaultPoints:3,  color:"#60a5fa" },
-  { id:"fieldboss", label:"Field Boss",       icon:"👹",  defaultPoints:1,  color:"#f87171" },
-  { id:"sanctuary", label:"Guild Sanctuary",  icon:"🏛️",  defaultPoints:3,  color:"#34d399" },
-  { id:"ymir",      label:"Ymir Cup",         icon:"🏆",  defaultPoints:0,  color:"#a78bfa", adminOnly:true },
+  { id:"sindri",    label:"Sindri Battle",    icon:"⚔️",  defaultPoints:10, adminPoints:10, userPoints:10, color:"#f59e0b" },
+  { id:"server",    label:"Server Battle",    icon:"🌐",  defaultPoints:3,  adminPoints:5,  userPoints:3,  color:"#60a5fa" },
+  { id:"fieldboss", label:"Field Boss",       icon:"👹",  defaultPoints:1,  adminPoints:5,  userPoints:1,  color:"#f87171" },
+  { id:"sanctuary", label:"Guild Sanctuary",  icon:"🏛️",  defaultPoints:3,  adminPoints:5,  userPoints:2,  color:"#34d399" },
+  { id:"ymir",      label:"Ymir Cup",         icon:"🏆",  defaultPoints:0,  adminPoints:0,  userPoints:0,  color:"#a78bfa", adminOnly:true },
 ];
 
 // ── Field Boss schedule (from game) ─────────────────────────────────────────
@@ -315,6 +318,7 @@ export default function App() {
   useEffect(()=>{
     const t = setInterval(()=>{
       const tickBoss = b => {
+        if(b.paused) return b; // Folkvang interserver paused after kill
         if(b.secs > 0) return {...b, secs:b.secs-1, elapsed:0};
         // boss is alive - count elapsed seconds since it spawned
         return {...b, secs:0, elapsed:(b.elapsed||0)+1};
@@ -421,11 +425,43 @@ export default function App() {
       .on("postgres_changes",{event:"*",schema:"public",table:"winners"},()=>{ loadWinners(); })
       .subscribe();
 
+    // Boss state realtime — syncs boss timers across all users
+    const bossSub = supabase
+      .channel("boss_state_rt")
+      .on("postgres_changes",{event:"*",schema:"public",table:"boss_state"},(payload)=>{
+        const u = payload.new || payload.old;
+        if(!u) return;
+        const { group, boss_id, secs, elapsed, image, killed_at, paused, respawnSecs } = u;
+        const setter = {
+          myrkrheim: setMyrkrheimBosses,
+          folkvang_normal: setFolkvangNormal,
+          folkvang_interserver: setFolkvangInterserver,
+          canyon: setCanyonBosses,
+          lindwurm: setLindwurmBosses,
+          hilders: setHildersBosses,
+          live4: setBosses,
+        }[group];
+        if(!setter) return;
+        setter(prev=>prev.map(b=>{
+          if(b.id !== boss_id) return b;
+          const updated = {...b};
+          if(secs !== undefined && secs !== null) updated.secs = secs;
+          if(elapsed !== undefined && elapsed !== null) updated.elapsed = elapsed;
+          if(image !== undefined && image !== null) updated.image = image;
+          if(killed_at !== undefined) updated.killed_at = killed_at;
+          if(paused !== undefined) updated.paused = paused;
+          if(respawnSecs !== undefined && respawnSecs !== null) updated.respawnSecs = respawnSecs;
+          return updated;
+        }));
+      })
+      .subscribe();
+
     return ()=>{
       supabase.removeChannel(auctionSub);
       supabase.removeChannel(membersSub);
       supabase.removeChannel(eventsSub);
       supabase.removeChannel(winnersSub);
+      supabase.removeChannel(bossSub);
     };
   },[]);
 
@@ -658,18 +694,41 @@ export default function App() {
     return setBosses;
   };
 
+  // Sync a single boss state to Supabase boss_state table (upsert)
+  const syncBossState = async(boss, group)=>{
+    try {
+      await supabase.from("boss_state").upsert({
+        boss_id: boss.id,
+        group,
+        secs: boss.secs,
+        elapsed: boss.elapsed || 0,
+        image: boss.image || null,
+        killed_at: boss.killed_at || null,
+        paused: boss.paused || false,
+        respawnSecs: boss.respawnSecs || null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "boss_id" });
+    } catch(e) { console.warn("Boss sync failed:", e); }
+  };
+
   // ── Boss actions ───────────────────────────────────────────────────────────
-  const handleMarkKilledGroup = (id, group)=>{
+  const handleMarkKilledGroup = async (id, group)=>{
     setKillFlash(id); setTimeout(()=>setKillFlash(null),700);
     const setter = getSetterByGroup(group);
+    let updatedBoss = null;
     setter(prev=>prev.map(b=>{
       if(b.id!==id) return b;
-      // For live4 bosses use minR/maxR; for others use respawnSecs
       const secs = b.respawnSecs != null
         ? b.respawnSecs
         : Math.floor((b.minR + Math.random()*(b.maxR-b.minR))*60);
-      return {...b, secs, elapsed:0};
+      // For Folkvang interserver: pause timer on kill
+      const isFVInterserver = group === "folkvang_interserver";
+      const newB = {...b, secs, elapsed:0, killed_at: new Date().toISOString(), paused: isFVInterserver};
+      updatedBoss = newB;
+      return newB;
     }));
+    // Sync to Supabase for real-time
+    if(updatedBoss) syncBossState(updatedBoss, group);
     if(discordConnected) showToast("📢 Discord notified: Boss killed!","info");
   };
 
@@ -677,28 +736,68 @@ export default function App() {
 
   const handleResetToZero = (id, group="live4")=>{
     setKillFlash(id); setTimeout(()=>setKillFlash(null),700);
-    getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,secs:0,elapsed:0}:b));
+    let updatedBoss = null;
+    getSetterByGroup(group)(prev=>prev.map(b=>{
+      if(b.id!==id) return b;
+      const nb = {...b,secs:0,elapsed:0,killed_at:null,paused:false};
+      updatedBoss = nb;
+      return nb;
+    }));
+    if(updatedBoss) syncBossState(updatedBoss, group);
   };
 
   const handleSetManual = ()=>{
     const mins = parseFloat(manualMins);
     if(isNaN(mins)||mins<0) return;
-    setBosses(prev=>prev.map(b=>b.id===bossModal?{...b,secs:Math.floor(mins*60),elapsed:0}:b));
+    let updatedBoss = null;
+    setBosses(prev=>prev.map(b=>{
+      if(b.id!==bossModal) return b;
+      const nb = {...b,secs:Math.floor(mins*60),elapsed:0};
+      updatedBoss = nb;
+      return nb;
+    }));
+    if(updatedBoss) syncBossState(updatedBoss, "live4");
     setBossModal(null); setManualMins("");
   };
 
-  // New HH:MM:SS timer setter for all boss groups
+  // New HH:MM:SS timer setter for all boss groups — all users can set for Folkvang
   const handleSetTimerHMS = ()=>{
     if(!bossTimerModal) return;
     const {id,group} = bossTimerModal;
     const totalSecs = (parseInt(timerHH)||0)*3600 + (parseInt(timerMM)||0)*60 + (parseInt(timerSS)||0);
-    getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,secs:totalSecs,elapsed:0}:b));
+    let updatedBoss = null;
+    getSetterByGroup(group)(prev=>prev.map(b=>{
+      if(b.id!==id) return b;
+      const nb = {...b, secs:totalSecs, elapsed:0, paused: false};
+      updatedBoss = nb;
+      return nb;
+    }));
+    if(updatedBoss) syncBossState(updatedBoss, group);
     setBossTimerModal(null);
+  };
+
+  // Resume a paused Folkvang interserver timer
+  const handleResumeFolkvang = (id, group)=>{
+    let updatedBoss = null;
+    getSetterByGroup(group)(prev=>prev.map(b=>{
+      if(b.id!==id) return b;
+      const nb = {...b, paused: false};
+      updatedBoss = nb;
+      return nb;
+    }));
+    if(updatedBoss) syncBossState(updatedBoss, group);
   };
 
   // Update respawn time for a boss
   const handleSetRespawnTime = (id, group, secs)=>{
-    getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,respawnSecs:secs}:b));
+    let updatedBoss = null;
+    getSetterByGroup(group)(prev=>prev.map(b=>{
+      if(b.id!==id) return b;
+      const nb = {...b,respawnSecs:secs};
+      updatedBoss = nb;
+      return nb;
+    }));
+    if(updatedBoss) syncBossState(updatedBoss, group);
   };
 
   // Add channel for a boss group
@@ -747,7 +846,13 @@ export default function App() {
       if (publicUrl) {
         // Add cache-bust timestamp so browser doesn't show stale image
         const freshUrl = `${publicUrl}?t=${Date.now()}`;
-        getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:freshUrl}:b));
+        let updatedBoss = null;
+        getSetterByGroup(group)(prev=>prev.map(b=>{
+          if(b.id!==id) return b;
+          updatedBoss = {...b, image:freshUrl};
+          return updatedBoss;
+        }));
+        if(updatedBoss) syncBossState(updatedBoss, group);
         setBossImageModal(null);
         showToast("🖼️ Boss image uploaded!");
       }
@@ -1220,6 +1325,19 @@ export default function App() {
   const recentEvents   = events.slice(0,5);
 
   // ── Auth screen ────────────────────────────────────────────────────────────
+  if(!currentUser && !sessionRestored) {
+    // Show branded loading splash while restoring session
+    return (
+      <div style={{minHeight:"100vh",background:"#06070e",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
+        <div style={{width:72,height:72,borderRadius:"50%",border:"2px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.07)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 40px rgba(251,191,36,0.2)"}}>
+          <img src={MOCK_LOGO} alt="Rampage" style={{width:"80%",height:"80%",objectFit:"contain",borderRadius:"50%"}} onError={e=>{e.target.style.display="none";}} />
+        </div>
+        <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:28,fontWeight:700,letterSpacing:"0.16em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>RAMPAGE</div>
+        <div style={{color:"#3d5070",fontSize:12,letterSpacing:"0.06em"}}>Loading…</div>
+      </div>
+    );
+  }
+
   if(!currentUser) {
     return <AuthScreen
       page={authPage} setPage={setAuthPage}
@@ -1284,6 +1402,9 @@ export default function App() {
         .col-btn-door { position:absolute; right:-13px; top:50%; transform:translateY(-50%); width:26px; height:26px; border-radius:50%; background:#0c0f1f; border:1px solid rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:center; cursor:pointer; font-size:9px; color:#3d5070; z-index:20; }
         .col-btn-door:hover { background:#111525; color:#64748b; border-color:rgba(255,255,255,0.18); }
         .boss-img-upload:hover .boss-img-ov { opacity:1!important; }
+        .boss-panel-body { overflow:hidden; transition:max-height 0.35s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease; }
+        .boss-panel-body.collapsed-body { max-height:0!important; opacity:0; pointer-events:none; }
+        .boss-panel-body.open-body { max-height:4000px; opacity:1; }
         .points-ctrl { display:flex; gap:4px; opacity:0; transition:opacity 0.15s; }
         tr:hover .points-ctrl { opacity:1; }
         .pts-btn { width:22px; height:22px; border-radius:5px; cursor:pointer; font-size:13px; font-weight:700; font-family:'Exo 2',sans-serif; display:flex; align-items:center; justify-content:center; transition:all 0.15s; }
@@ -1314,10 +1435,12 @@ export default function App() {
 
           {/* Logo */}
           <div style={{padding:collapsed?"18px 0":"22px 20px 16px",display:"flex",alignItems:"center",gap:12,justifyContent:collapsed?"center":"flex-start",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
-            <div className="logo-ring" onClick={()=>fileRef.current?.click()}
+            <div className="logo-ring"
+              onClick={()=>{ if(isAdmin) fileRef.current?.click(); else setActiveNav("dashboard"); }}
+              title={isAdmin?"Upload logo":"Go to Dashboard"}
               style={{width:50,height:50,borderRadius:"50%",border:"2px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.07)",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden",flexShrink:0,boxShadow:"0 0 24px rgba(251,191,36,0.18)"}}>
               <img src={logoUrl} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}} onError={()=>setLogoErr(true)} />
-              <div className="logo-ov" style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.65)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",borderRadius:"50%",fontSize:18}}>📷</div>
+              <div className="logo-ov" style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.65)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",borderRadius:"50%",fontSize:18}}>{isAdmin?"📷":"🏠"}</div>
             </div>
             {!collapsed&&<div>
               <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:20,fontWeight:700,letterSpacing:"0.12em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>RAMPAGE</div>
@@ -1492,29 +1615,14 @@ export default function App() {
                 folkvangNormal={folkvangNormal}
                 folkvangInterserver={folkvangInterserver}
                 canManage={canManage}
+                isAdmin={isAdmin}
                 killFlash={killFlash}
                 onKill={(id,group)=>handleMarkKilledGroup(id,group)}
                 onReset={(id,group)=>handleResetToZero(id,group)}
                 onSetTimer={(id,group)=>{setBossTimerModal({id,group});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
-                onImage={(id,group)=>{setBossImageModal({id,group});bossImgRef.current?.click();}}
+                onImage={(id,group,file)=>{ if(file) handleBossImageUploadGroup(file,id,group); else { setBossImageModal({id,group}); bossImgRef.current?.click(); }}}
+                onResume={(id,group)=>handleResumeFolkvang(id,group)}
               />
-
-              {/* Field Boss Schedule */}
-              <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:"18px 20px",marginBottom:22}}>
-                <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:"#f87171",marginBottom:12,letterSpacing:"0.04em"}}>👹 Field Boss Schedule (UTC+8)</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
-                  {FIELD_BOSS_SCHEDULE.map((b,i)=>{
-                    const isToday = b.days.includes(getDayName());
-                    return(
-                      <div key={i} style={{background:isToday?"rgba(248,113,113,0.08)":"rgba(255,255,255,0.02)",border:`1px solid ${isToday?"rgba(248,113,113,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:11,padding:"12px 14px"}}>
-                        <div style={{fontSize:12.5,fontWeight:700,color:isToday?"#f87171":"#e2e8f0"}}>{b.name}{isToday&&<span style={{marginLeft:8,fontSize:10,background:"rgba(248,113,113,0.2)",color:"#f87171",padding:"1px 6px",borderRadius:4}}>TODAY</span>}</div>
-                        <div style={{fontSize:10.5,color:"#3d5070",marginTop:3}}>{b.map}</div>
-                        <div style={{fontSize:11,color:"#60a5fa",marginTop:4}}>{b.days.join(", ")} · {b.time}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
 
               {/* ── MYRKRHEIM BOSSES ── */}
               <BossGroupPanel
@@ -1524,11 +1632,12 @@ export default function App() {
                 bosses={myrkrheimBosses}
                 groupKey="myrkrheim"
                 canManage={canManage}
+                isAdmin={isAdmin}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"myrkrheim")}
                 onReset={(id)=>handleResetToZero(id,"myrkrheim")}
                 onSetTimer={(id)=>{setBossTimerModal({id,group:"myrkrheim"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
-                onImage={(id)=>{setBossImageModal({id,group:"myrkrheim"});bossImgRef.current?.click();}}
+                onImage={(id,file)=>{ if(file) handleBossImageUploadGroup(file,id,"myrkrheim"); else { setBossImageModal({id,group:"myrkrheim"}); bossImgRef.current?.click(); }}}
                 onAddChannel={(bossName,color)=>handleAddChannel("myrkrheim",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"myrkrheim")}
                 showRespawnEdit={false}
@@ -1542,11 +1651,12 @@ export default function App() {
                 bosses={bosses}
                 groupKey="live4"
                 canManage={canManage}
+                isAdmin={isAdmin}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"live4")}
                 onReset={(id)=>handleResetToZero(id,"live4")}
                 onSetTimer={(id)=>{setBossTimerModal({id,group:"live4"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
-                onImage={(id)=>{setBossImageModal({id,group:"live4"});bossImgRef.current?.click();}}
+                onImage={(id,file)=>{ if(file) handleBossImageUploadGroup(file,id,"live4"); else { setBossImageModal({id,group:"live4"}); bossImgRef.current?.click(); }}}
                 onAddChannel={(bossName,color)=>handleAddChannel("live4",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"live4")}
                 showRespawnEdit={false}
@@ -1560,11 +1670,12 @@ export default function App() {
                 bosses={canyonBosses}
                 groupKey="canyon"
                 canManage={canManage}
+                isAdmin={isAdmin}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"canyon")}
                 onReset={(id)=>handleResetToZero(id,"canyon")}
                 onSetTimer={(id)=>{setBossTimerModal({id,group:"canyon"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
-                onImage={(id)=>{setBossImageModal({id,group:"canyon"});bossImgRef.current?.click();}}
+                onImage={(id,file)=>{ if(file) handleBossImageUploadGroup(file,id,"canyon"); else { setBossImageModal({id,group:"canyon"}); bossImgRef.current?.click(); }}}
                 onAddChannel={(bossName,color)=>handleAddChannel("canyon",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"canyon")}
                 onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"canyon",secs)}
@@ -1579,11 +1690,12 @@ export default function App() {
                 bosses={lindwurmBosses}
                 groupKey="lindwurm"
                 canManage={canManage}
+                isAdmin={isAdmin}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"lindwurm")}
                 onReset={(id)=>handleResetToZero(id,"lindwurm")}
                 onSetTimer={(id)=>{setBossTimerModal({id,group:"lindwurm"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
-                onImage={(id)=>{setBossImageModal({id,group:"lindwurm"});bossImgRef.current?.click();}}
+                onImage={(id,file)=>{ if(file) handleBossImageUploadGroup(file,id,"lindwurm"); else { setBossImageModal({id,group:"lindwurm"}); bossImgRef.current?.click(); }}}
                 onAddChannel={(bossName,color)=>handleAddChannel("lindwurm",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"lindwurm")}
                 onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"lindwurm",secs)}
@@ -1598,11 +1710,12 @@ export default function App() {
                 bosses={hildersBosses}
                 groupKey="hilders"
                 canManage={canManage}
+                isAdmin={isAdmin}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"hilders")}
                 onReset={(id)=>handleResetToZero(id,"hilders")}
                 onSetTimer={(id)=>{setBossTimerModal({id,group:"hilders"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
-                onImage={(id)=>{setBossImageModal({id,group:"hilders"});bossImgRef.current?.click();}}
+                onImage={(id,file)=>{ if(file) handleBossImageUploadGroup(file,id,"hilders"); else { setBossImageModal({id,group:"hilders"}); bossImgRef.current?.click(); }}}
                 onAddChannel={(bossName,color)=>handleAddChannel("hilders",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"hilders")}
                 onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"hilders",secs)}
@@ -1619,7 +1732,12 @@ export default function App() {
                 <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                   {EVENT_TYPES.map(et=>(
                     <div key={et.id} style={{background:`rgba(0,0,0,0.3)`,border:`1px solid ${et.color}40`,borderRadius:10,padding:"7px 14px",fontSize:12,color:et.color,fontWeight:700,display:"flex",alignItems:"center",gap:6}}>
-                      {et.icon} {et.label} <span style={{opacity:0.6,fontWeight:400}}>{et.adminOnly?"Admin assigns":`+${eventPoints[et.id]??et.defaultPoints}pts`}</span>
+                      {et.icon} {et.label}
+                      <span style={{opacity:0.6,fontWeight:400}}>
+                        {et.adminOnly ? "Admin assigns" : canManage
+                          ? `+${eventPoints[et.id]??et.adminPoints}pts`
+                          : `+${et.userPoints}pts`}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -2037,35 +2155,40 @@ export default function App() {
               <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"22px"}}>
                 <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#f1f5f9",marginBottom:4,letterSpacing:"0.04em"}}>🏆 Event Points Config</h3>
                 <p style={{color:"#3d5070",fontSize:11.5,marginBottom:16,lineHeight:1.6}}>
-                  {isAdmin||isLeader ? "Edit default points per event type. Saved instantly." : "Default points awarded per event type."}
+                  {isAdmin||isLeader ? "Admin points are what admins award per event. User points shown to members on check-in badges." : "Default points awarded per event type when you check in."}
                 </p>
                 {EVENT_TYPES.map(et=>{
-                  const pts = eventPoints[et.id] ?? et.defaultPoints;
+                  const pts = eventPoints[et.id] ?? et.adminPoints;
                   return(
                     <div key={et.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,background:"rgba(255,255,255,0.02)",border:`1px solid ${et.adminOnly?"rgba(167,139,250,0.2)":"rgba(255,255,255,0.05)"}`,borderRadius:10,padding:"10px 14px"}}>
                       <span style={{fontSize:18,flexShrink:0}}>{et.icon}</span>
-                      <span style={{flex:1,fontSize:13,color:"#e2e8f0",fontWeight:600}}>{et.label}</span>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,color:"#e2e8f0",fontWeight:600}}>{et.label}</div>
+                        {!et.adminOnly&&!isAdmin&&!isLeader&&(
+                          <div style={{fontSize:10,color:"#3d5070",marginTop:1}}>Your view: <span style={{color:et.color}}>+{et.userPoints}pts</span></div>
+                        )}
+                      </div>
                       {et.adminOnly&&<span style={{fontSize:9,color:"#a78bfa",background:"rgba(167,139,250,0.1)",border:"1px solid rgba(167,139,250,0.25)",borderRadius:4,padding:"2px 6px",fontWeight:700}}>ADMIN ASSIGNS</span>}
                       {isAdmin||isLeader ? (
                         <div style={{display:"flex",alignItems:"center",gap:6}}>
-                          {!et.adminOnly&&<button onClick={()=>setEventPoints(p=>({...p,[et.id]:Math.max(0,(p[et.id]??et.defaultPoints)-1)}))}
+                          {!et.adminOnly&&<button onClick={()=>setEventPoints(p=>({...p,[et.id]:Math.max(0,(p[et.id]??et.adminPoints)-1)}))}
                             style={{width:28,height:28,borderRadius:7,background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.3)",color:"#f87171",cursor:"pointer",fontSize:16,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>}
-                          <input
-                            type="number" min="0" max="999"
-                            value={pts}
-                            onChange={e=>{
-                              const v = parseInt(e.target.value);
-                              if(!isNaN(v)&&v>=0) setEventPoints(p=>({...p,[et.id]:v}));
-                            }}
-                            style={{width:56,background:"rgba(255,255,255,0.07)",border:`1px solid ${et.color}50`,borderRadius:8,padding:"5px 6px",color:et.adminOnly?"#a78bfa":et.color,fontSize:15,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,textAlign:"center",outline:"none"}}
-                          />
-                          {!et.adminOnly&&<button onClick={()=>setEventPoints(p=>({...p,[et.id]:(p[et.id]??et.defaultPoints)+1}))}
+                          <div style={{textAlign:"center"}}>
+                            <input
+                              type="number" min="0" max="999"
+                              value={pts}
+                              onChange={e=>{ const v = parseInt(e.target.value); if(!isNaN(v)&&v>=0) setEventPoints(p=>({...p,[et.id]:v})); }}
+                              style={{width:56,background:"rgba(255,255,255,0.07)",border:`1px solid ${et.color}50`,borderRadius:8,padding:"5px 6px",color:et.adminOnly?"#a78bfa":et.color,fontSize:15,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,textAlign:"center",outline:"none"}}
+                            />
+                            {!et.adminOnly&&<div style={{fontSize:8,color:"#3d5070",marginTop:2}}>admin pts · user: +{et.userPoints}</div>}
+                          </div>
+                          {!et.adminOnly&&<button onClick={()=>setEventPoints(p=>({...p,[et.id]:(p[et.id]??et.adminPoints)+1}))}
                             style={{width:28,height:28,borderRadius:7,background:"rgba(52,211,153,0.15)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",cursor:"pointer",fontSize:16,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>}
                           <span style={{fontSize:10,color:"#3d5070",marginLeft:2}}>pts</span>
                         </div>
                       ) : (
                         <div style={{background:`${et.color}18`,border:`1px solid ${et.color}40`,borderRadius:8,padding:"5px 14px",fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:et.adminOnly?"#a78bfa":et.color,minWidth:60,textAlign:"center"}}>
-                          {et.adminOnly?"—":`+${pts}`}
+                          {et.adminOnly?"—":`+${et.userPoints}`}
                         </div>
                       )}
                     </div>
@@ -2073,9 +2196,8 @@ export default function App() {
                 })}
                 {(isAdmin||isLeader)&&(
                   <button className="btn" onClick={()=>{
-                    // Reset all to defaults
                     const defaults = {};
-                    EVENT_TYPES.forEach(et=>{ defaults[et.id]=et.defaultPoints; });
+                    EVENT_TYPES.forEach(et=>{ defaults[et.id]=et.adminPoints; });
                     setEventPoints(defaults);
                     showToast("🔄 Points reset to defaults");
                   }} style={{width:"100%",marginTop:4,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"9px",fontSize:12}}>
@@ -2766,7 +2888,7 @@ function BossSchedulePanel() {
       </div>
 
       {/* Body */}
-      {!collapsed&&(
+      <div className={`boss-panel-body ${collapsed?"collapsed-body":"open-body"}`}>
         <div style={{padding:"14px 18px 18px"}}>
           {/* Today's bosses */}
           <div style={{fontSize:10,fontWeight:700,color:"#fbbf24",letterSpacing:"0.1em",marginBottom:8,textTransform:"uppercase"}}>
@@ -2821,7 +2943,7 @@ function BossSchedulePanel() {
             ⚠️ Bosses appear <strong style={{color:"#94a3b8"}}>once per day</strong> — timer cannot be changed after boss appears. Only conquerors may change respawn time (once/week, resets Tue 5AM UTC+8). Cannot be set between <strong style={{color:"#94a3b8"}}>10:30PM – 11:59PM</strong>.
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -2987,29 +3109,42 @@ function OverworldMapsPanel({ canManage }) {
 }
 
 // ── Folkvang / Valhalla Dungeon Card (expandable, floors + modes) ─────────────
-function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, killFlash, onKill, onReset, onSetTimer, onImage }) {
+function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, killFlash, onKill, onReset, onSetTimer, onImage, onResume, isAdmin }) {
   const [expandedMode, setExpandedMode] = useState("interserver"); // "interserver" | "normal" | null
   const [collapsed, setCollapsed] = useState(false);
+  const fileInputRef = useRef(null);
+  const [pendingImgBoss, setPendingImgBoss] = useState(null);
+
+  const handleImgClick = (bossId) => {
+    setPendingImgBoss(bossId);
+    fileInputRef.current?.click();
+  };
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if(file && pendingImgBoss) { onImage(pendingImgBoss, expandedMode==="interserver"?"folkvang_interserver":"folkvang_normal", file); }
+    e.target.value = "";
+  };
 
   const modes = [
-    { key:"interserver", label:"INTER-SERVER", color:"#f87171", border:"rgba(248,113,113,0.35)", bg:"rgba(248,113,113,0.08)", bosses:folkvangInterserver },
-    { key:"normal",      label:"NORMAL",       color:"#f97316", border:"rgba(249,115,22,0.35)",  bg:"rgba(249,115,22,0.08)",  bosses:folkvangNormal },
+    { key:"interserver", label:"INTER-SERVER", color:"#f87171", border:"rgba(248,113,113,0.35)", bg:"rgba(248,113,113,0.08)", bosses:folkvangInterserver, group:"folkvang_interserver" },
+    { key:"normal",      label:"NORMAL",       color:"#f97316", border:"rgba(249,115,22,0.35)",  bg:"rgba(249,115,22,0.08)",  bosses:folkvangNormal,      group:"folkvang_normal" },
   ];
 
   const allBosses = [...folkvangNormal, ...folkvangInterserver];
-  const liveCount = allBosses.filter(b=>b.secs===0).length;
+  const liveCount = allBosses.filter(b=>b.secs===0&&!b.paused).length;
   const totalCount = allBosses.length;
 
   return (
     <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(245,158,11,0.35)",borderRadius:18,overflow:"hidden",marginBottom:22,boxShadow:"0 0 40px rgba(245,158,11,0.06)"}}>
+      <input ref={fileInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleFileChange} />
       {/* Header */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:collapsed?"none":"1px solid rgba(255,255,255,0.06)",cursor:"pointer",background:"rgba(245,158,11,0.04)"}}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:collapsed?"none":"1px solid rgba(255,255,255,0.06)",cursor:"pointer",background:"rgba(245,158,11,0.04)",userSelect:"none"}}
         onClick={()=>setCollapsed(p=>!p)}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{width:40,height:40,borderRadius:10,background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.35)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>🏔️</div>
           <div>
             <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:"#fbbf24",letterSpacing:"0.06em"}}>FOLKVANG · VALHALLA DUNGEON</div>
-            <div style={{fontSize:10.5,color:"#3d5070",marginTop:2}}>5 Floors · Normal + Inter-Server · Respawn ~1h45m</div>
+            <div style={{fontSize:10.5,color:"#3d5070",marginTop:2}}>5 Floors · Normal (1h45m) + Inter-Server (2h, pause on kill)</div>
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
@@ -3017,11 +3152,11 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, k
             <MapTypeBadge type="Dungeon" />
             <span style={{fontSize:9.5,padding:"3px 9px",borderRadius:6,background:"rgba(52,211,153,0.13)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",fontWeight:700,letterSpacing:"0.06em"}}>{liveCount}/{totalCount} LIVE</span>
           </div>
-          <span style={{color:"#3d5070",fontSize:14,transition:"transform 0.2s",display:"inline-block",transform:collapsed?"rotate(0deg)":"rotate(180deg)"}}>▾</span>
+          <span style={{color:"#3d5070",fontSize:14,transition:"transform 0.3s",display:"inline-block",transform:collapsed?"rotate(0deg)":"rotate(180deg)"}}>▾</span>
         </div>
       </div>
 
-      {!collapsed && (
+      <div className={`boss-panel-body ${collapsed?"collapsed-body":"open-body"}`}>
         <div style={{padding:"16px 20px"}}>
           {/* Mode tabs */}
           <div style={{display:"flex",gap:8,marginBottom:14}}>
@@ -3039,6 +3174,7 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, k
                 <span style={{width:7,height:7,borderRadius:"50%",background:expandedMode===mode.key?mode.color:"#3d5070",flexShrink:0}} />
                 {mode.label}
                 <span style={{fontSize:9,opacity:0.7,fontWeight:400}}>5F</span>
+                {mode.key==="interserver"&&<span style={{fontSize:8,opacity:0.7,marginLeft:2}}>⏸ kill=pause</span>}
               </button>
             ))}
           </div>
@@ -3048,43 +3184,82 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, k
             if(expandedMode !== mode.key) return null;
             return (
               <div key={mode.key} style={{background:"rgba(255,255,255,0.02)",borderRadius:12,border:`1px solid ${mode.border}`,overflow:"hidden"}}>
-                <div style={{background:mode.bg,padding:"8px 16px",borderBottom:`1px solid ${mode.border}`,display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:11,fontWeight:700,color:mode.color,letterSpacing:"0.07em"}}>{mode.label}</span>
-                  <span style={{fontSize:10,color:"#3d5070"}}>· 5 Floors</span>
+                <div style={{background:mode.bg,padding:"8px 16px",borderBottom:`1px solid ${mode.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:11,fontWeight:700,color:mode.color,letterSpacing:"0.07em"}}>{mode.label}</span>
+                    <span style={{fontSize:10,color:"#3d5070"}}>· 5 Floors</span>
+                  </div>
+                  {mode.key==="interserver"&&(
+                    <span style={{fontSize:9.5,color:"#60a5fa",background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.2)",padding:"2px 8px",borderRadius:5,fontWeight:700}}>
+                      ⏱ 2h default · all users can set timer
+                    </span>
+                  )}
                 </div>
                 {mode.bosses.map((b,idx)=>{
-                  const st = bossStatus(b.secs);
-                  const bs = BOSS_STATUS_STYLE[st];
-                  const isLive = b.secs === 0;
+                  const st = b.paused ? "Paused" : bossStatus(b.secs);
+                  const bs = b.paused ? {bg:"rgba(96,165,250,0.15)",color:"#60a5fa",border:"rgba(96,165,250,0.35)"} : BOSS_STATUS_STYLE[st] || BOSS_STATUS_STYLE.Waiting;
+                  const isLive = b.secs === 0 && !b.paused;
                   return (
                     <div key={b.id} style={{
-                      display:"flex",alignItems:"center",gap:10,padding:"11px 16px",
+                      display:"flex",alignItems:"center",gap:10,padding:"12px 16px",
                       borderBottom:idx<mode.bosses.length-1?`1px solid rgba(255,255,255,0.04)`:"none",
-                      background:killFlash===b.id?"rgba(239,68,68,0.15)":"transparent",
+                      background:killFlash===b.id?"rgba(239,68,68,0.15)":b.paused?"rgba(96,165,250,0.04)":"transparent",
                       transition:"background 0.3s",
+                      flexWrap:"wrap",
                     }}>
+                      {/* Boss image + upload button */}
+                      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,flexShrink:0}}>
+                        <div style={{width:42,height:42,borderRadius:9,overflow:"hidden",border:`1px solid ${mode.color}40`,background:mode.color+"18",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                          {b.image ? <img src={b.image} alt={b.floor} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span style={{fontSize:16}}>🏔️</span>}
+                        </div>
+                        {(canManage||isAdmin)&&(
+                          <button onClick={()=>handleImgClick(b.id)}
+                            style={{fontSize:7,padding:"1px 5px",background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.25)",color:"#60a5fa",borderRadius:3,cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:700,whiteSpace:"nowrap"}}>
+                            📷 78×78
+                          </button>
+                        )}
+                      </div>
                       {/* Floor label */}
                       <div style={{width:32,flexShrink:0,fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,color:mode.color,textAlign:"center"}}>{b.floor}</div>
                       {/* Status dot */}
-                      <div style={{width:8,height:8,borderRadius:"50%",background:isLive?"#34d399":"#f59e0b",boxShadow:isLive?"0 0 8px #34d399":"0 0 8px #f59e0b",flexShrink:0}} />
+                      <div style={{width:8,height:8,borderRadius:"50%",background:b.paused?"#60a5fa":isLive?"#34d399":"#f59e0b",boxShadow:b.paused?"0 0 8px #60a5fa":isLive?"0 0 8px #34d399":"0 0 8px #f59e0b",flexShrink:0}} />
                       {/* Timer */}
-                      <div style={{flex:1}}>
-                        <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:20,fontWeight:700,color:isLive?"#34d399":mode.color,letterSpacing:"0.04em"}}>{fmtSecs(b.secs)}</span>
+                      <div style={{flex:1,minWidth:80}}>
+                        <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:20,fontWeight:700,color:b.paused?"#60a5fa":isLive?"#34d399":mode.color,letterSpacing:"0.04em"}}>
+                          {b.paused ? `⏸ ${fmtSecs(b.secs)}` : fmtSecs(b.secs)}
+                        </span>
                         {isLive && b.elapsed>0 && <span style={{fontSize:9.5,color:"#34d399",marginLeft:8}}>+{fmtSecs(b.elapsed)}</span>}
+                        {b.paused&&<div style={{fontSize:9,color:"#60a5fa",marginTop:2}}>Timer paused · press ▶ to resume</div>}
                       </div>
+                      {/* Respawn info */}
+                      {b.respawnSecs&&(
+                        <span style={{fontSize:9,color:"#3d5070",flexShrink:0}}>
+                          {mode.key==="interserver"?"2h":"1h45m"}
+                        </span>
+                      )}
                       {/* Status badge */}
                       <span style={{display:"inline-flex",padding:"2px 8px",borderRadius:5,background:bs.bg,color:bs.color,border:`1px solid ${bs.border}`,fontSize:9.5,fontWeight:700,flexShrink:0}}>{st}</span>
-                      {/* Action buttons */}
-                      {canManage && (
-                        <div style={{display:"flex",gap:5,flexShrink:0}}>
-                          <button className="ghost-btn" onClick={()=>onKill(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                            style={{fontSize:9.5,padding:"3px 8px",color:mode.color,borderColor:`${mode.color}40`}}>☠️ Kill</button>
-                          <button className="ghost-btn" onClick={()=>onReset(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
+                      {/* Action buttons — ALL users can set timer; canManage for kill */}
+                      <div style={{display:"flex",gap:5,flexShrink:0,flexWrap:"wrap"}}>
+                        {canManage&&(
+                          <button className="ghost-btn" onClick={()=>onKill(b.id, mode.group)}
+                            style={{fontSize:9.5,padding:"3px 8px",color:mode.color,borderColor:`${mode.color}40`}}>
+                            ☠️ Kill{mode.key==="interserver"?" & Pause":""}
+                          </button>
+                        )}
+                        {/* Resume button for paused Folkvang interserver */}
+                        {b.paused&&canManage&&(
+                          <button className="ghost-btn" onClick={()=>onResume(b.id, mode.group)}
+                            style={{fontSize:9.5,padding:"3px 8px",color:"#34d399",borderColor:"rgba(52,211,153,0.4)"}}>▶ Resume</button>
+                        )}
+                        {canManage&&(
+                          <button className="ghost-btn" onClick={()=>onReset(b.id, mode.group)}
                             style={{fontSize:9.5,padding:"3px 8px"}}>🔴 Live</button>
-                          <button className="ghost-btn" onClick={()=>onSetTimer(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                            style={{fontSize:9.5,padding:"3px 8px"}}>⏱</button>
-                        </div>
-                      )}
+                        )}
+                        {/* All users (not just admins) can set the timer */}
+                        <button className="ghost-btn" onClick={()=>onSetTimer(b.id, mode.group)}
+                          style={{fontSize:9.5,padding:"3px 8px",color:"#a5b4fc",borderColor:"rgba(165,180,252,0.3)"}}>⏱ Set</button>
+                      </div>
                     </div>
                   );
                 })}
@@ -3092,22 +3267,35 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, k
             );
           })}
         </div>
-      )}
+      </div>
     </div>
   );
 }
 
 // ── Boss Group Panel (full page) ─────────────────────────────────────────────
-function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, killFlash, onKill, onReset, onSetTimer, onImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels }) {
+function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, killFlash, onKill, onReset, onSetTimer, onImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels, isAdmin }) {
   const bossNames = [...new Set(bosses.map(b=>b.name))];
   const [editRespawn, setEditRespawn] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
   const liveCount = bosses.filter(b=>b.secs===0).length;
+  const fileInputRef = useRef(null);
+  const [pendingImgBoss, setPendingImgBoss] = useState(null);
+
+  const handleImgClick = (bossId) => {
+    setPendingImgBoss(bossId);
+    fileInputRef.current?.click();
+  };
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if(file && pendingImgBoss) { onImage(pendingImgBoss, file); }
+    e.target.value = "";
+  };
 
   return(
     <div style={{background:"rgba(255,255,255,0.02)",border:`1px solid ${color}35`,borderRadius:18,overflow:"hidden",marginBottom:22,boxShadow:`0 0 30px ${color}08`}}>
-      {/* Header — same style as Folkvang */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:collapsed?"none":`1px solid ${color}20`,cursor:"pointer",background:`${color}05`}}
+      <input ref={fileInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleFileChange} />
+      {/* Header — clickable to collapse with animation */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:collapsed?"none":`1px solid ${color}20`,cursor:"pointer",background:`${color}05`,userSelect:"none"}}
         onClick={()=>setCollapsed(p=>!p)}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:15,fontWeight:700,color,letterSpacing:"0.06em"}}>{title}</div>
@@ -3115,11 +3303,11 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, k
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
           <span style={{fontSize:9.5,padding:"3px 9px",borderRadius:6,background:"rgba(52,211,153,0.13)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",fontWeight:700,letterSpacing:"0.06em"}}>{liveCount}/{bosses.length} LIVE</span>
-          <span style={{color:"#3d5070",fontSize:14,transition:"transform 0.2s",display:"inline-block",transform:collapsed?"rotate(0deg)":"rotate(180deg)"}}>▾</span>
+          <span style={{color:"#3d5070",fontSize:14,transition:"transform 0.3s",display:"inline-block",transform:collapsed?"rotate(0deg)":"rotate(180deg)"}}>▾</span>
         </div>
       </div>
 
-      {!collapsed && (
+      <div className={`boss-panel-body ${collapsed?"collapsed-body":"open-body"}`}>
         <div style={{padding:"14px 18px"}}>
           {bossNames.map(bossName=>{
             const bossChannels = bosses.filter(b=>b.name===bossName);
@@ -3148,11 +3336,17 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, k
 
                         {/* Compact top row: image + info + status */}
                         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-                          {/* Boss image — 78x78, clickable to upload */}
-                          <div className="boss-img-upload" onClick={()=>canManage&&onImage(b.id)}
-                            style={{width:46,height:46,borderRadius:10,background:b.color+"22",border:`2px solid ${b.color}44`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0,position:"relative",cursor:canManage?"pointer":"default"}}>
-                            {b.image ? <img src={b.image} alt={b.name} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span style={{fontSize:20}}>👹</span>}
-                            {canManage&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",fontSize:12}} className="boss-img-ov">📷</div>}
+                          {/* Boss image — 78x78, with upload button below */}
+                          <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,flexShrink:0}}>
+                            <div style={{width:46,height:46,borderRadius:10,background:b.color+"22",border:`2px solid ${b.color}44`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",position:"relative"}}>
+                              {b.image ? <img src={b.image} alt={b.name} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span style={{fontSize:20}}>👹</span>}
+                            </div>
+                            {(canManage || isAdmin) && (
+                              <button onClick={()=>handleImgClick(b.id)}
+                                style={{fontSize:8,padding:"2px 6px",background:"rgba(96,165,250,0.12)",border:"1px solid rgba(96,165,250,0.3)",color:"#60a5fa",borderRadius:4,cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:700,whiteSpace:"nowrap",lineHeight:1.4}}>
+                                📷 78×78
+                              </button>
+                            )}
                           </div>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:11.5,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>CH {b.channel}</div>
@@ -3204,7 +3398,7 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, k
             );
           })}
         </div>
-      )}
+      </div>
     </div>
   );
 }
