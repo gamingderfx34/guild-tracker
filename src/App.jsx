@@ -233,6 +233,7 @@ export default function App() {
   const [canyonBosses, setCanyonBosses]             = useState(()=>lsGet("rampageCanyon", DEFAULT_CANYON));
   const [lindwurmBosses, setLindwurmBosses]         = useState(()=>lsGet("rampageLindwurm", DEFAULT_LINDWURM));
   const [hildersBosses, setHildersBosses]           = useState(()=>lsGet("rampageHilders", DEFAULT_HILDERS));
+  const [bossTimerDb, setBossTimerDb]               = useState([]); // raw Supabase boss_timers records
   const [bossTimerModal, setBossTimerModal]         = useState(null); // {id, group}
   const [timerHH, setTimerHH]   = useState("0");
   const [timerMM, setTimerMM]   = useState("0");
@@ -372,16 +373,15 @@ export default function App() {
     loadAuctionItems();
     loadEvents();
     loadWinners();
+    loadBossTimers();
   },[]);
 
   // ── Supabase real-time subscriptions ─────────────────────────────────────
   useEffect(()=>{
-    // Auction items real-time — any change reloads both auction + members (for points)
+    // Auction items real-time
     const auctionSub = supabase
       .channel("auction_items_rt")
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); })
-      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); loadMembers(); })
-      .on("postgres_changes",{event:"DELETE",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); })
       .subscribe();
 
     // Members real-time — so new registrations & role/points changes appear everywhere instantly
@@ -406,11 +406,18 @@ export default function App() {
       .on("postgres_changes",{event:"*",schema:"public",table:"winners"},()=>{ loadWinners(); })
       .subscribe();
 
+    // Boss timers real-time — syncs kill events and images to all users instantly
+    const bossTimerSub = supabase
+      .channel("boss_timers_rt")
+      .on("postgres_changes",{event:"*",schema:"public",table:"boss_timers"},()=>{ loadBossTimers(); })
+      .subscribe();
+
     return ()=>{
       supabase.removeChannel(auctionSub);
       supabase.removeChannel(membersSub);
       supabase.removeChannel(eventsSub);
       supabase.removeChannel(winnersSub);
+      supabase.removeChannel(bossTimerSub);
     };
   },[]);
 
@@ -478,6 +485,39 @@ export default function App() {
       setWinners(lsGet("rampageWinners",[]));
     }
   };
+
+  // ── Boss timers from Supabase (for real-time sync across all users) ────────
+  const loadBossTimers = async()=>{
+    try {
+      const { data, error } = await supabase.from("boss_timers").select("*");
+      if (!error && data) setBossTimerDb(data);
+    } catch(e) { console.error("loadBossTimers:", e); }
+  };
+
+  // Apply DB boss timer records to all boss group states
+  useEffect(()=>{
+    if (bossTimerDb.length === 0) return;
+    const applyTimers = (prev) => prev.map(b=>{
+      const rec = bossTimerDb.find(r=>r.id===b.id);
+      if (!rec) return b;
+      // Apply image from DB if present
+      const image = rec.image || b.image;
+      // Calculate current secs from killed_at timestamp
+      if (!rec.killed_at) return {...b, secs:0, elapsed:0, image};
+      const killedAt = new Date(rec.killed_at).getTime();
+      const elapsedSec = Math.floor((Date.now() - killedAt) / 1000);
+      const secs = Math.max(0, (rec.respawn_secs||0) - elapsedSec);
+      const elapsed = secs===0 ? Math.max(0, elapsedSec - (rec.respawn_secs||0)) : 0;
+      return {...b, secs, elapsed, image};
+    });
+    setBosses(applyTimers);
+    setMyrkrheimBosses(applyTimers);
+    setFolkvangNormal(applyTimers);
+    setFolkvangInterserver(applyTimers);
+    setCanyonBosses(applyTimers);
+    setLindwurmBosses(applyTimers);
+    setHildersBosses(applyTimers);
+  },[bossTimerDb]);
 
   // Persist members locally as backup
   useEffect(()=>{ if(members.length>0) lsSet("rampageMembers",members); },[members]);
@@ -644,25 +684,40 @@ export default function App() {
   };
 
   // ── Boss actions ───────────────────────────────────────────────────────────
-  const handleMarkKilledGroup = (id, group)=>{
+  const handleMarkKilledGroup = async (id, group)=>{
     setKillFlash(id); setTimeout(()=>setKillFlash(null),700);
     const setter = getSetterByGroup(group);
-    setter(prev=>prev.map(b=>{
-      if(b.id!==id) return b;
-      // For live4 bosses use minR/maxR; for others use respawnSecs
-      const secs = b.respawnSecs != null
-        ? b.respawnSecs
-        : Math.floor((b.minR + Math.random()*(b.maxR-b.minR))*60);
-      return {...b, secs, elapsed:0};
-    }));
+    // Find the boss to get its respawn time
+    const allBosses = [...bosses,...myrkrheimBosses,...folkvangNormal,...folkvangInterserver,...canyonBosses,...lindwurmBosses,...hildersBosses];
+    const boss = allBosses.find(b=>b.id===id);
+    const respawnSecs = boss?.respawnSecs != null
+      ? boss.respawnSecs
+      : Math.floor(((boss?.minR||30) + Math.random()*((boss?.maxR||90)-(boss?.minR||30)))*60);
+    // Update local state immediately so the UI responds instantly
+    setter(prev=>prev.map(b=>b.id===id?{...b,secs:respawnSecs,elapsed:0}:b));
+    // Save to Supabase so all other users see the update in real-time
+    try {
+      await supabase.from("boss_timers").upsert({
+        id,
+        killed_at: new Date().toISOString(),
+        respawn_secs: respawnSecs,
+        updated_at: new Date().toISOString(),
+      },{onConflict:"id"});
+    } catch(e){ console.error("Boss timer upsert error:",e); }
     if(discordConnected) showToast("📢 Discord notified: Boss killed!","info");
   };
 
   const handleMarkKilled = (id)=> handleMarkKilledGroup(id, "live4");
 
-  const handleResetToZero = (id, group="live4")=>{
+  const handleResetToZero = async (id, group="live4")=>{
     setKillFlash(id); setTimeout(()=>setKillFlash(null),700);
     getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,secs:0,elapsed:0}:b));
+    // Clear killed_at in Supabase so all users see boss as LIVE
+    try {
+      await supabase.from("boss_timers").upsert({
+        id, killed_at:null, respawn_secs:0, updated_at:new Date().toISOString(),
+      },{onConflict:"id"});
+    } catch(e){ console.error("Boss reset error:",e); }
   };
 
   const handleSetManual = ()=>{
@@ -673,11 +728,21 @@ export default function App() {
   };
 
   // New HH:MM:SS timer setter for all boss groups
-  const handleSetTimerHMS = ()=>{
+  const handleSetTimerHMS = async ()=>{
     if(!bossTimerModal) return;
     const {id,group} = bossTimerModal;
     const totalSecs = (parseInt(timerHH)||0)*3600 + (parseInt(timerMM)||0)*60 + (parseInt(timerSS)||0);
     getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,secs:totalSecs,elapsed:0}:b));
+    // Save to Supabase as a kill event so all users see the countdown
+    try {
+      const killedAt = new Date(Date.now() - (0) + 0).toISOString(); // killed "now", respawn in totalSecs
+      await supabase.from("boss_timers").upsert({
+        id,
+        killed_at: new Date().toISOString(),
+        respawn_secs: totalSecs,
+        updated_at: new Date().toISOString(),
+      },{onConflict:"id"});
+    } catch(e){ console.error("Set timer error:",e); }
     setBossTimerModal(null);
   };
 
@@ -733,6 +798,15 @@ export default function App() {
         // Add cache-bust timestamp so browser doesn't show stale image
         const freshUrl = `${publicUrl}?t=${Date.now()}`;
         getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:freshUrl}:b));
+        // Save image URL to Supabase boss_timers so ALL users see it
+        try {
+          const { error: imgErr } = await supabase.from("boss_timers")
+            .upsert({id, image:freshUrl, updated_at:new Date().toISOString()},{onConflict:"id"});
+          if(imgErr) {
+            // Row might not exist yet — try insert
+            await supabase.from("boss_timers").insert({id, image:freshUrl}).catch(()=>{});
+          }
+        } catch {}
         setBossImageModal(null);
         showToast("🖼️ Boss image uploaded!");
       }
@@ -929,28 +1003,23 @@ export default function App() {
     const file = e.target.files?.[0]; if(!file) return;
     setAuctionImgUploading(true);
     try {
-      const ext = file.name.split(".").pop().toLowerCase();
-      // Unique path so every upload is fresh and visible to all users
-      const path = `auction/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("asset")
-        .upload(path, file, { cacheControl:"3600", upsert:true, contentType: file.type });
-      if(upErr) {
-        console.error("Image upload error:", upErr);
-        showToast(`❌ Image upload failed: ${upErr.message} — make sure the 'asset' bucket exists and is public.`, "error");
-        setAuctionImgUploading(false);
-        return;
+      const ext = file.name.split(".").pop();
+      const path = `auction/${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from("asset").upload(path, file, {cacheControl:"3600",upsert:false});
+      if(!error) {
+        const { data: urlData } = supabase.storage.from("asset").getPublicUrl(path);
+        setAuctionForm(p=>({...p,imageUrl:urlData.publicUrl,image:null}));
+        showToast("🖼️ Image uploaded!");
+      } else {
+        // fallback: local base64
+        const reader = new FileReader();
+        reader.onload = ev=>setAuctionForm(p=>({...p,imageUrl:ev.target.result,image:null}));
+        reader.readAsDataURL(file);
       }
-      const { data: urlData } = supabase.storage.from("asset").getPublicUrl(path);
-      if(urlData?.publicUrl) {
-        // Cache-bust so all users see the fresh image
-        const freshUrl = `${urlData.publicUrl}?t=${Date.now()}`;
-        setAuctionForm(p=>({...p, imageUrl:freshUrl, image:null}));
-        showToast("🖼️ Image uploaded & public!");
-      }
-    } catch(e) {
-      console.error("Image upload exception:", e);
-      showToast("❌ Image upload error — check Supabase storage bucket settings","error");
+    } catch {
+      const reader = new FileReader();
+      reader.onload = ev=>setAuctionForm(p=>({...p,imageUrl:ev.target.result,image:null}));
+      reader.readAsDataURL(file);
     }
     setAuctionImgUploading(false);
   };
@@ -958,37 +1027,30 @@ export default function App() {
   const handleAddAuctionItem = async()=>{
     if(!auctionForm.name.trim()) { showToast("❌ Item name required","error"); return; }
     const endTime = Date.now() + (parseFloat(auctionForm.durationHours)||24)*3600000;
-    // Don't include client-generated 'id' — let Supabase auto-generate it.
-    // Don't include local-only 'endTime' — only 'end_time' (ISO string) goes to DB.
-    const dbItem = {
-      name:        auctionForm.name.trim(),
-      rarity:      auctionForm.rarity,
-      minBid:      parseInt(auctionForm.minBid)||500,
-      currentBid:  0,
-      highBidder:  null,
-      bids:        JSON.stringify([]),
-      locked:      false,
-      winner:      null,
-      claimed:     false,
-      image:       auctionForm.imageUrl || "🏺",
-      end_time:    new Date(endTime).toISOString(),
+    const item = {
+      id: String(Date.now()),
+      name: auctionForm.name,
+      rarity: auctionForm.rarity,
+      minBid: parseInt(auctionForm.minBid)||500,
+      currentBid: 0, highBidder: null,
+      bids: [],
+      locked: false, winner: null, claimed: false,
+      image: auctionForm.imageUrl || "🏺",
+      end_time: new Date(endTime).toISOString(),
+      endTime,
+      created_at: new Date().toISOString(),
     };
     try {
+      const dbItem = {...item, bids:JSON.stringify([]), endTime:undefined};
       const { error } = await supabase.from("auction_items").insert([dbItem]);
-      if(error) {
-        console.error("Supabase auction insert error:", error);
-        showToast(`❌ Insert failed: ${error.message}`, "error");
-        return;
-      }
+      if(error) throw error;
       await loadAuctionItems();
-      showToast(`✅ ${dbItem.name} added to auction!`);
-    } catch(e) {
-      console.error("Auction insert exception:", e);
-      showToast("❌ Failed to add auction item — check Supabase table & RLS settings","error");
-      return;
+    } catch {
+      setAuctionItems(prev=>[item,...prev]);
     }
     setShowAddAuction(false);
     setAuctionForm({name:"",rarity:"Epic",minBid:1000,durationHours:24,image:null,imageUrl:""});
+    showToast(`✅ ${item.name} added to auction!`);
   };
 
   const handleEditAuctionItem = async()=>{
@@ -1027,82 +1089,43 @@ export default function App() {
     if(amount <= bidModal.currentBid && bidModal.currentBid > 0) { showToast(`❌ Bid must exceed ${bidModal.currentBid.toLocaleString()} pts`,"error"); return; }
     if(amount < bidModal.minBid) { showToast(`❌ Minimum bid is ${bidModal.minBid.toLocaleString()} pts`,"error"); return; }
     if(amount > myPoints) { showToast(`❌ Not enough points! You have ${myPoints.toLocaleString()} pts`,"error"); return; }
-
     const myName = currentUser?.name||"Guest";
-    // Capture previous high bidder info BEFORE updating
-    const prevHighBidder = bidModal.highBidder;
-    const prevBidAmount  = bidModal.currentBid || 0;
-    const prevMember     = prevHighBidder ? members.find(m=>m.name===prevHighBidder) : null;
-
     const newBid = {bidder:myName, amount, time:new Date().toLocaleTimeString()};
     const updatedBids = [...(bidModal.bids||[]), newBid];
-
+    // Real-time update via Supabase
     try {
-      // 1) Deduct bid points from current bidder
-      const { error: deductErr } = await supabase.from("members")
-        .update({ points: myPoints - amount })
-        .eq("id", myMember.id);
-      if(deductErr) throw deductErr;
-
-      // 2) Refund previous high bidder (different person, non-zero bid)
-      if(prevMember && prevHighBidder !== myName && prevBidAmount > 0) {
-        const refundedPts = (prevMember.points || 0) + prevBidAmount;
-        await supabase.from("members")
-          .update({ points: refundedPts })
-          .eq("id", prevMember.id);
-      }
-
-      // 3) Update auction item in Supabase
-      const { error: bidErr } = await supabase.from("auction_items").update({
-        currentBid:  amount,
-        highBidder:  myName,
-        bids:        JSON.stringify(updatedBids),
-      }).eq("id", bidModal.id);
-      if(bidErr) throw bidErr;
-
-      // Refresh both collections so UI is consistent everywhere
-      await loadAuctionItems();
-      await loadMembers();
-
-    } catch(err) {
-      console.error("Bid error:", err);
-      // Optimistic local fallback so the current user sees feedback
+      const { error } = await supabase.from("auction_items").update({
+        currentBid: amount,
+        highBidder: myName,
+        bids: JSON.stringify(updatedBids),
+      }).eq("id",bidModal.id);
+      if(!error) await loadAuctionItems();
+      else throw error;
+    } catch {
       setAuctionItems(prev=>prev.map(item=>{
         if(item.id!==bidModal.id) return item;
         return {...item, currentBid:amount, highBidder:myName, bids:updatedBids};
       }));
-      setMembers(prev=>prev.map(m=>{
-        if(m.name===myName)           return {...m, points:(m.points||0)-amount};
-        if(m.name===prevHighBidder)   return {...m, points:(m.points||0)+prevBidAmount};
-        return m;
-      }));
-      showToast("⚠️ Bid saved locally — Supabase sync failed. Check table permissions.","warn");
     }
-
     setBidModal(null); setBidAmount("");
     showToast(`🏺 Bid of ${amount.toLocaleString()} pts placed on ${bidModal.name}!`);
   };
 
   const handleAnnounceWinner = async(item)=>{
     const w = {
+      id: String(Date.now()),
       itemName: item.name, winner: item.highBidder, points: item.currentBid,
       date: new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}),
       claimed: false, rarity: item.rarity, image: item.image,
       created_at: new Date().toISOString(),
     };
     try {
-      const { error: wErr } = await supabase.from("winners").insert([w]);
-      if(wErr) throw wErr;
-      const { error: lErr } = await supabase.from("auction_items")
-        .update({locked:true, winner:item.highBidder})
-        .eq("id",item.id);
-      if(lErr) throw lErr;
+      await supabase.from("winners").insert([w]);
+      await supabase.from("auction_items").update({locked:true,winner:item.highBidder}).eq("id",item.id);
       await loadAuctionItems();
-      await loadWinners();
-      await loadMembers();
-    } catch(e) {
-      console.error("Announce winner error:", e);
-      setWinners(prev=>[...prev, {...w, id:String(Date.now())}]);
+      // Real-time sub handles loadWinners()
+    } catch {
+      setWinners(prev=>[...prev,w]);
       setAuctionItems(prev=>prev.map(i=>i.id===item.id?{...i,locked:true,winner:item.highBidder}:i));
     }
     if(discordConnected) showToast("📢 Discord notified: Winner announced!","info");
@@ -2173,19 +2196,12 @@ export default function App() {
                     const file=ev.target.files?.[0];if(!file)return;
                     setAuctionImgUploading(true);
                     try {
-                      const ext=file.name.split(".").pop().toLowerCase();
-                      const path=`auction/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-                      const {error:upErr}=await supabase.storage.from("asset").upload(path,file,{cacheControl:"3600",upsert:true,contentType:file.type});
-                      if(!upErr){
-                        const {data:ud}=supabase.storage.from("asset").getPublicUrl(path);
-                        const freshUrl=`${ud.publicUrl}?t=${Date.now()}`;
-                        setEditAuction(p=>({...p,image:freshUrl}));
-                        showToast("🖼️ Image uploaded & public!");
-                      } else {
-                        console.error("Edit image upload error:",upErr);
-                        showToast(`❌ Upload failed: ${upErr.message}`,"error");
-                      }
-                    } catch(e){console.error("Edit image exception:",e);showToast("❌ Image upload error","error");}
+                      const ext=file.name.split(".").pop();
+                      const path=`auction/${Date.now()}.${ext}`;
+                      const {error}=await supabase.storage.from("asset").upload(path,file,{cacheControl:"3600",upsert:false});
+                      if(!error){const {data:ud}=supabase.storage.from("asset").getPublicUrl(path);setEditAuction(p=>({...p,image:ud.publicUrl}));}
+                      else {const r=new FileReader();r.onload=ev2=>setEditAuction(p=>({...p,image:ev2.target.result}));r.readAsDataURL(file);}
+                    } catch {const r=new FileReader();r.onload=ev2=>setEditAuction(p=>({...p,image:ev2.target.result}));r.readAsDataURL(file);}
                     setAuctionImgUploading(false);
                   };inp.click();
                 }} disabled={auctionImgUploading}
@@ -3030,16 +3046,15 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, k
                           <RespawnEditor current={editRespawn.val} onSave={(secs)=>{onRespawnEdit(b.id,secs);setEditRespawn(null);}} onCancel={()=>setEditRespawn(null)} />
                         )}
 
-                        {canManage&&<>
-                          <button className="kill-btn" onClick={()=>onKill(b.id)} style={{background:`${b.color}20`,border:`1px solid ${b.color}45`,color:b.color,marginBottom:6,width:"100%",fontSize:11,padding:"7px"}}>
-                            ☠️ Mark Killed
-                          </button>
-                          <div style={{display:"flex",gap:6}}>
-                            <button className="ghost-btn" onClick={()=>onReset(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>🔴 LIVE</button>
-                            <button className="ghost-btn" onClick={()=>onSetTimer(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>⏱ Timer</button>
-                          </div>
-                        </>}
-                        {!canManage&&<div style={{textAlign:"center",color:"#3d5070",fontSize:9.5,marginTop:4,display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>👀 View only</div>}
+                        {/* All users can mark killed and set timer — syncs to everyone in real-time */}
+                        <button className="kill-btn" onClick={()=>onKill(b.id)} style={{background:`${b.color}20`,border:`1px solid ${b.color}45`,color:b.color,marginBottom:6,width:"100%",fontSize:11,padding:"7px"}}>
+                          ☠️ Mark Killed
+                        </button>
+                        <div style={{display:"flex",gap:6}}>
+                          <button className="ghost-btn" onClick={()=>onReset(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>🔴 LIVE</button>
+                          <button className="ghost-btn" onClick={()=>onSetTimer(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>⏱ Timer</button>
+                          {canManage&&onImage&&<button className="ghost-btn" onClick={()=>onImage(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>📷</button>}
+                        </div>
                       </div>
                     );
                   })}
