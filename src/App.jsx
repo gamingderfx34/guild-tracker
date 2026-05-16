@@ -1044,21 +1044,47 @@ export default function App() {
     const myName = currentUser?.name||"Guest";
     const newBid = {bidder:myName, amount, time:new Date().toLocaleTimeString()};
     const updatedBids = [...(bidModal.bids||[]), newBid];
-    // Real-time update via Supabase
-    try {
-      const { error } = await supabase.from("auction_items").update({
-        currentBid: amount,
-        highBidder: myName,
-        bids: JSON.stringify(updatedBids),
-      }).eq("id",bidModal.id);
-      if(!error) await loadAuctionItems();
-      else throw error;
-    } catch {
-      setAuctionItems(prev=>prev.map(item=>{
-        if(item.id!==bidModal.id) return item;
-        return {...item, currentBid:amount, highBidder:myName, bids:updatedBids};
-      }));
+
+    // ── Points: deduct from new bidder, refund previous high bidder ───────────
+    const prevHighBidder = bidModal.highBidder;
+    const prevBidAmount  = bidModal.currentBid || 0;
+
+    // 1) Deduct points from the new bidder
+    const myUpdatedPoints = myPoints - amount;
+    await supabase.from("members").update({points: myUpdatedPoints}).eq("id", myMember.id);
+    setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points: myUpdatedPoints} : m));
+    if(currentUser.id === myMember.id) setCurrentUser(prev=>({...prev, points: myUpdatedPoints}));
+
+    // 2) Refund the previous high bidder (if someone was outbid)
+    if(prevHighBidder && prevHighBidder !== myName && prevBidAmount > 0) {
+      const prevMember = members.find(m=>m.name===prevHighBidder);
+      if(prevMember) {
+        const refundedPoints = (prevMember.points || 0) + prevBidAmount;
+        await supabase.from("members").update({points: refundedPoints}).eq("id", prevMember.id);
+        setMembers(prev=>prev.map(m=>m.id===prevMember.id ? {...m, points: refundedPoints} : m));
+      }
     }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Update auction item in Supabase — realtime subscription refreshes all users
+    const { error } = await supabase.from("auction_items").update({
+      currentBid: amount,
+      highBidder: myName,
+      bids: JSON.stringify(updatedBids),
+    }).eq("id", bidModal.id);
+    if(error) {
+      showToast(`❌ Bid failed: ${error.message}`, "error");
+      // Rollback points on failure
+      await supabase.from("members").update({points: myPoints}).eq("id", myMember.id);
+      setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points: myPoints} : m));
+      if(currentUser.id === myMember.id) setCurrentUser(prev=>({...prev, points: myPoints}));
+      return;
+    }
+    // Optimistic local update so the bidder sees it instantly
+    setAuctionItems(prev=>prev.map(item=>{
+      if(item.id!==bidModal.id) return item;
+      return {...item, currentBid:amount, highBidder:myName, bids:updatedBids};
+    }));
     setBidModal(null); setBidAmount("");
     showToast(`🏺 Bid of ${amount.toLocaleString()} pts placed on ${bidModal.name}!`);
   };
