@@ -500,8 +500,8 @@ export default function App() {
     const applyTimers = (prev) => prev.map(b=>{
       const rec = bossTimerDb.find(r=>r.id===b.id);
       if (!rec) return b;
-      // Apply image from DB if present
-      const image = rec.image || b.image;
+      // Always prefer DB image over local state (DB is source of truth for images)
+      const image = (rec.image && rec.image.length > 0) ? rec.image : b.image;
       // Calculate current secs from killed_at timestamp
       if (!rec.killed_at) return {...b, secs:0, elapsed:0, image};
       const killedAt = new Date(rec.killed_at).getTime();
@@ -795,18 +795,21 @@ export default function App() {
       const { data: urlData } = supabase.storage.from('boss-images').getPublicUrl(path);
       const publicUrl = urlData?.publicUrl;
       if (publicUrl) {
-        // Add cache-bust timestamp so browser doesn't show stale image
-        const freshUrl = `${publicUrl}?t=${Date.now()}`;
-        getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:freshUrl}:b));
-        // Save image URL to Supabase boss_timers so ALL users see it
+        // Use stable URL (no cache-bust) so all users share the same key in DB
+        const stableUrl = publicUrl;
+        getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:stableUrl}:b));
+        // Save image URL to Supabase boss_timers so ALL users see it in real-time.
+        // Upsert first (handles existing rows), then insert if row is missing (boss never killed).
         try {
           const { error: imgErr } = await supabase.from("boss_timers")
-            .upsert({id, image:freshUrl, updated_at:new Date().toISOString()},{onConflict:"id"});
+            .upsert({id, image:stableUrl, updated_at:new Date().toISOString()},{onConflict:"id"});
           if(imgErr) {
-            // Row might not exist yet — try insert
-            await supabase.from("boss_timers").insert({id, image:freshUrl}).catch(()=>{});
+            // Row doesn't exist yet (boss never killed) — insert a bare image row
+            const { error: insErr } = await supabase.from("boss_timers")
+              .insert({id, image:stableUrl, killed_at:null, respawn_secs:0, updated_at:new Date().toISOString()});
+            if(insErr) console.error("Boss image insert error:", insErr);
           }
-        } catch {}
+        } catch(dbErr) { console.error("Boss image DB error:", dbErr); }
         setBossImageModal(null);
         showToast("🖼️ Boss image uploaded!");
       }
@@ -2934,17 +2937,15 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, k
                       </div>
                       {/* Status badge */}
                       <span style={{display:"inline-flex",padding:"2px 8px",borderRadius:5,background:bs.bg,color:bs.color,border:`1px solid ${bs.border}`,fontSize:9.5,fontWeight:700,flexShrink:0}}>{st}</span>
-                      {/* Action buttons */}
-                      {canManage && (
-                        <div style={{display:"flex",gap:5,flexShrink:0}}>
-                          <button className="ghost-btn" onClick={()=>onKill(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                            style={{fontSize:9.5,padding:"3px 8px",color:mode.color,borderColor:`${mode.color}40`}}>☠️ Kill</button>
-                          <button className="ghost-btn" onClick={()=>onReset(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                            style={{fontSize:9.5,padding:"3px 8px"}}>🔴 Live</button>
-                          <button className="ghost-btn" onClick={()=>onSetTimer(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                            style={{fontSize:9.5,padding:"3px 8px"}}>⏱</button>
-                        </div>
-                      )}
+                      {/* Action buttons — all users can mark killed & set timer (syncs in real-time) */}
+                      <div style={{display:"flex",gap:5,flexShrink:0}}>
+                        <button className="ghost-btn" onClick={()=>onKill(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
+                          style={{fontSize:9.5,padding:"3px 8px",color:mode.color,borderColor:`${mode.color}40`}}>☠️ Kill</button>
+                        <button className="ghost-btn" onClick={()=>onReset(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
+                          style={{fontSize:9.5,padding:"3px 8px"}}>🔴 Live</button>
+                        <button className="ghost-btn" onClick={()=>onSetTimer(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
+                          style={{fontSize:9.5,padding:"3px 8px"}}>⏱ Timer</button>
+                      </div>
                     </div>
                   );
                 })}
