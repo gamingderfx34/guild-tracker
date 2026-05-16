@@ -44,7 +44,7 @@ function mkFolkvang(type, color) {
   }));
 }
 const DEFAULT_FOLKVANG_NORMAL = mkFolkvang("normal","#f97316");
-const DEFAULT_FOLKVANG_INTERSERVER = mkFolkvang("interserver","#e879f9");
+const DEFAULT_FOLKVANG_INTERSERVER = mkFolkvang("interserver","#f87171");
 
 // Canyon of Nidavellir — 3 bosses, interserver, 3 channels default
 const CANYON_BOSSES_DEF = [
@@ -2195,39 +2195,50 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
   );
 }
 
-// ── Overworld Maps Panel ─────────────────────────────────────────────────────
+// ── Nidavellir Region Maps Panel ─────────────────────────────────────────────
+// Nidavellir is the whole continent — these are its accessible regions/zones.
 const OVERWORLD_MAPS = [
   {
     id:"myrkrheim", name:"MYRKRHEIM", type:"Open World", channels:"Unlimited",
-    status:"LIVE", border:"#3b82f6", glow:"rgba(59,130,246,0.18)", icon:"🌍", tag:"open-world",
-    desc:"Main overworld hunting zone",
+    status:"LIVE", border:"#3b82f6", glow:"rgba(59,130,246,0.18)", icon:"🏰", tag:"open-world",
+    level:"Lv. 55 – 70", desc:"Central hub city of Nidavellir",
   },
   {
     id:"canyon", name:"CANYON OF NIDAVELLIR", type:"Inter-Server", channels:"Shared",
-    status:"LIVE", border:"#a855f7", glow:"rgba(168,85,247,0.18)", icon:"🏜️", tag:"inter-server",
-    desc:"Cross-server PvP canyon zone",
+    status:"LIVE", border:"#ef4444", glow:"rgba(239,68,68,0.18)", icon:"🏜️", tag:"inter-server",
+    level:"Lv. 60 – 70", desc:"Inter-server PvP canyon zone",
   },
   {
     id:"lindwurm", name:"LINDWURM CAVE", type:"Open World", channels:"Unlimited",
     status:"LIVE", border:"#3b82f6", glow:"rgba(59,130,246,0.18)", icon:"🦎", tag:"open-world",
-    desc:"Lv.65+ · Req [Main] 26-2 clear",
+    level:"Lv. 65 – 80", desc:"Req [Main] 26-2 · Cave hunting zone",
   },
   {
-    id:"kingstomb", name:"KINGSTOMB", type:"Open World", channels:"Unlimited",
+    id:"kingstomb", name:"KING'S TOMB", type:"Open World", channels:"Unlimited",
     status:"LIVE", border:"#3b82f6", glow:"rgba(59,130,246,0.18)", icon:"⚰️", tag:"open-world",
-    desc:"High-level overworld area",
+    level:"Lv. 60 – 70", desc:"Ruined tomb region, south Nidavellir",
+  },
+  {
+    id:"hilders", name:"HILDER'S LABYRINTH", type:"Inter-Server", channels:"Shared",
+    status:"LIVE", border:"#ef4444", glow:"rgba(239,68,68,0.18)", icon:"🌀", tag:"inter-server",
+    level:"Lv. 70 – 80", desc:"Inter-server labyrinth dungeon area",
+  },
+  {
+    id:"twisted", name:"TWISTED PLATEAU", type:"Open World", channels:"Unlimited",
+    status:"LIVE", border:"#3b82f6", glow:"rgba(59,130,246,0.18)", icon:"🗻", tag:"open-world",
+    level:"Lv. 80 – 90", desc:"High-level eastern plateau zone",
   },
 ];
 
 const MAP_TYPE_BADGE = {
   "Open World":    { bg:"rgba(59,130,246,0.18)",  color:"#60a5fa",  border:"rgba(59,130,246,0.4)"  },
-  "Inter-Server":  { bg:"rgba(168,85,247,0.18)",  color:"#c084fc",  border:"rgba(168,85,247,0.4)"  },
+  "Inter-Server":  { bg:"rgba(239,68,68,0.18)",   color:"#f87171",  border:"rgba(239,68,68,0.4)"   },
   "Dungeon":       { bg:"rgba(245,158,11,0.18)",   color:"#fbbf24",  border:"rgba(245,158,11,0.4)"  },
   "Normal":        { bg:"rgba(52,211,153,0.14)",   color:"#34d399",  border:"rgba(52,211,153,0.35)" },
 };
 const CH_BADGE = {
   "Unlimited": { bg:"rgba(6,182,212,0.15)",  color:"#22d3ee",  border:"rgba(6,182,212,0.35)"  },
-  "Shared":    { bg:"rgba(168,85,247,0.15)", color:"#c084fc",  border:"rgba(168,85,247,0.35)" },
+  "Shared":    { bg:"rgba(239,68,68,0.15)",  color:"#f87171",  border:"rgba(239,68,68,0.35)"  },
 };
 
 function MapTypeBadge({ type }) {
@@ -2245,18 +2256,18 @@ function OverworldMapsPanel({ canManage }) {
     return o;
   });
 
-  const glowByTag = { "open-world":"0 0 30px rgba(59,130,246,0.18)", "inter-server":"0 0 30px rgba(168,85,247,0.18)" };
+  const glowByTag = { "open-world":"0 0 30px rgba(59,130,246,0.18)", "inter-server":"0 0 30px rgba(239,68,68,0.15)" };
 
   return (
     <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"18px 20px",marginBottom:22}}>
       {/* Header */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
         <div>
-          <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.06em"}}>🗺️ OVERWORLD MAPS</div>
-          <div style={{fontSize:11,color:"#3d5070",marginTop:2}}>Live open-world and inter-server zones</div>
+          <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.06em"}}>🗺️ NIDAVELLIR — REGIONS</div>
+          <div style={{fontSize:11,color:"#3d5070",marginTop:2}}>All accessible zones across the Nidavellir continent</div>
         </div>
         <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
-          {[["Open World","#60a5fa"],["Inter-Server","#c084fc"],["Channels","#22d3ee"]].map(([lbl,c])=>(
+          {[["Open World","#60a5fa"],["Inter-Server","#f87171"],["Channels","#22d3ee"]].map(([lbl,c])=>(
             <span key={lbl} style={{fontSize:10,color:c,background:`${c}18`,border:`1px solid ${c}35`,borderRadius:5,padding:"2px 8px",fontWeight:700,letterSpacing:"0.06em"}}>{lbl}</span>
           ))}
         </div>
@@ -2298,6 +2309,7 @@ function OverworldMapsPanel({ canManage }) {
                     <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,color:"#f1f5f9",letterSpacing:"0.05em"}}>{map.name}</span>
                   </div>
                   <div style={{fontSize:10,color:"#3d5070",marginLeft:23}}>{map.desc}</div>
+                  {map.level && <div style={{fontSize:9.5,color:"#fbbf24",marginLeft:23,marginTop:2,fontWeight:700,letterSpacing:"0.04em"}}>{map.level}</div>}
                 </div>
                 {/* Status dot + LIVE badge */}
                 <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,flexShrink:0}}>
@@ -2349,7 +2361,7 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, k
   const [collapsed, setCollapsed] = useState(false);
 
   const modes = [
-    { key:"interserver", label:"INTER-SERVER", color:"#e879f9", border:"rgba(232,121,249,0.35)", bg:"rgba(232,121,249,0.08)", bosses:folkvangInterserver },
+    { key:"interserver", label:"INTER-SERVER", color:"#f87171", border:"rgba(248,113,113,0.35)", bg:"rgba(248,113,113,0.08)", bosses:folkvangInterserver },
     { key:"normal",      label:"NORMAL",       color:"#f97316", border:"rgba(249,115,22,0.35)",  bg:"rgba(249,115,22,0.08)",  bosses:folkvangNormal },
   ];
 
