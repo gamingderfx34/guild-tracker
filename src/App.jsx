@@ -88,6 +88,21 @@ function mkLindwurm() {
 }
 const DEFAULT_LINDWURM = mkLindwurm();
 
+// Hilder's Labyrinth — 3 bosses, 2 channels default, Lv.70-80 required, Inter-Server
+const HILDERS_BOSSES_DEF = [
+  { id:"hl1", name:"Lv.71 Ancient Labyrinth Warden",   color:"#a78bfa" },
+  { id:"hl2", name:"Lv.74 Twisted Maze Overlord",      color:"#c084fc" },
+  { id:"hl3", name:"Lv.77 Hilder's Champion Guardian", color:"#e879f9" },
+];
+function mkHilders() {
+  let arr=[];
+  HILDERS_BOSSES_DEF.forEach(b=>{
+    [1,2].forEach(ch=>arr.push({...b,id:`${b.id}_ch${ch}`,secs:0,elapsed:0,respawnSecs:6300,channel:ch,image:null,group:"hilders"}));
+  });
+  return arr;
+}
+const DEFAULT_HILDERS = mkHilders();
+
 const DEFAULT_BOSSES = [...DEFAULT_LIVE4];
 
 const INIT_AUCTION_ITEMS = [
@@ -217,6 +232,7 @@ export default function App() {
   const [folkvangInterserver, setFolkvangInterserver] = useState(()=>lsGet("rampageFolkvangI", DEFAULT_FOLKVANG_INTERSERVER));
   const [canyonBosses, setCanyonBosses]             = useState(()=>lsGet("rampageCanyon", DEFAULT_CANYON));
   const [lindwurmBosses, setLindwurmBosses]         = useState(()=>lsGet("rampageLindwurm", DEFAULT_LINDWURM));
+  const [hildersBosses, setHildersBosses]           = useState(()=>lsGet("rampageHilders", DEFAULT_HILDERS));
   const [bossTimerModal, setBossTimerModal]         = useState(null); // {id, group}
   const [timerHH, setTimerHH]   = useState("0");
   const [timerMM, setTimerMM]   = useState("0");
@@ -268,6 +284,7 @@ export default function App() {
   useEffect(()=>{ lsSet("rampageFolkvangI", folkvangInterserver); }, [folkvangInterserver]);
   useEffect(()=>{ lsSet("rampageCanyon", canyonBosses); }, [canyonBosses]);
   useEffect(()=>{ lsSet("rampageLindwurm", lindwurmBosses); }, [lindwurmBosses]);
+  useEffect(()=>{ lsSet("rampageHilders", hildersBosses); }, [hildersBosses]);
   useEffect(()=>{ lsSet("rampageAuction", auctionItems); }, [auctionItems]);
   useEffect(()=>{ lsSet("rampageWinners", winners); }, [winners]);
   useEffect(()=>{ lsSet("rampageEvents", events); }, [events]);
@@ -296,6 +313,7 @@ export default function App() {
       setFolkvangInterserver(prev=>prev.map(tickBoss));
       setCanyonBosses(prev=>prev.map(tickBoss));
       setLindwurmBosses(prev=>prev.map(tickBoss));
+      setHildersBosses(prev=>prev.map(tickBoss));
       setNow(Date.now());
       lsSet("rampageBossTimestamp", Date.now());
     },1000);
@@ -545,6 +563,7 @@ export default function App() {
     if(group==="folkvang_interserver") return setFolkvangInterserver;
     if(group==="canyon") return setCanyonBosses;
     if(group==="lindwurm") return setLindwurmBosses;
+    if(group==="hilders") return setHildersBosses;
     return setBosses;
   };
 
@@ -610,12 +629,29 @@ export default function App() {
     showToast("🗑️ Channel removed","warn");
   };
 
-  // Update boss image for any group
-  const handleBossImageUploadGroup = (file, id, group)=>{
+  // Update boss image for any group — uploads to Supabase storage if possible, falls back to base64
+  const handleBossImageUploadGroup = async (file, id, group)=>{
+    if (!file || !id || !group) return;
+    // Try Supabase storage upload (78x78 bucket)
+    try {
+      const ext = file.name.split('.').pop() || 'png';
+      const path = `boss-icons/${group}_${id}_${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from('asset').upload(path, file, { upsert: true, contentType: file.type });
+      if (!upErr) {
+        const { data: urlData } = supabase.storage.from('asset').getPublicUrl(path);
+        const publicUrl = urlData?.publicUrl;
+        if (publicUrl) {
+          getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:publicUrl}:b));
+          setBossImageModal(null); showToast("🖼️ Boss image uploaded to Supabase!");
+          return;
+        }
+      }
+    } catch {}
+    // Fallback: base64
     const reader = new FileReader();
     reader.onload = ev=>{
       getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:ev.target.result}:b));
-      setBossImageModal(null); showToast("🖼️ Boss image updated!");
+      setBossImageModal(null); showToast("🖼️ Boss image updated (local)!");
     };
     reader.readAsDataURL(file);
   };
@@ -1151,7 +1187,7 @@ export default function App() {
                   <p style={{color:"#3d5070",fontSize:11,marginTop:1}}>{members.length} members</p>
                 </div>
               </div>
-              <MembersTable filtered={filtered} currentUser={currentUser} canManage={canManage} onEdit={setEditMember} onRemove={handleRemoveMember} onAddPoints={isAdmin?handleAddPoints:null} />
+              <MembersTable filtered={filtered} currentUser={currentUser} canManage={canManage} onEdit={setEditMember} onRemove={handleRemoveMember} onAddPoints={canManage?handleAddPoints:null} onChangeRole={canManage?handleChangeRole:null} />
             </div>
           </div>}
 
@@ -1170,7 +1206,7 @@ export default function App() {
                   </button>
                 )}
               </div>
-              <MembersTable filtered={filtered} currentUser={currentUser} canManage={canManage} onEdit={setEditMember} onRemove={handleRemoveMember} onAddPoints={isAdmin?handleAddPoints:null} showFull />
+              <MembersTable filtered={filtered} currentUser={currentUser} canManage={canManage} onEdit={setEditMember} onRemove={handleRemoveMember} onAddPoints={canManage?handleAddPoints:null} onChangeRole={canManage?handleChangeRole:null} showFull />
             </div>
           )}
 
@@ -1285,6 +1321,25 @@ export default function App() {
                 onAddChannel={(bossName,color)=>handleAddChannel("lindwurm",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"lindwurm")}
                 onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"lindwurm",secs)}
+                showRespawnEdit={true}
+              />
+
+              {/* ── HILDER'S LABYRINTH ── */}
+              <BossGroupPanel
+                title="🌀 HILDER'S LABYRINTH — Lv.70-80 Required"
+                subtitle="Inter-Server · 3 Bosses · 2+ Channels"
+                color="#a78bfa"
+                bosses={hildersBosses}
+                groupKey="hilders"
+                canManage={canManage}
+                killFlash={killFlash}
+                onKill={(id)=>handleMarkKilledGroup(id,"hilders")}
+                onReset={(id)=>handleResetToZero(id,"hilders")}
+                onSetTimer={(id)=>{setBossTimerModal({id,group:"hilders"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
+                onImage={(id)=>{setBossImageModal({id,group:"hilders"});bossImgRef.current?.click();}}
+                onAddChannel={(bossName,color)=>handleAddChannel("hilders",bossName,color)}
+                onRemoveChannel={(id)=>handleRemoveChannel(id,"hilders")}
+                onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"hilders",secs)}
                 showRespawnEdit={true}
               />
             </div>
@@ -2164,7 +2219,16 @@ export default function App() {
 }
 
 // ── Members Table ─────────────────────────────────────────────────────────────
-function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAddPoints, showFull }) {
+function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAddPoints, onChangeRole, showFull }) {
+  const [editPointsId, setEditPointsId] = useState(null);
+  const [pointsDelta, setPointsDelta] = useState("");
+
+  const handlePointsSubmit = (memberId) => {
+    const delta = parseInt(pointsDelta);
+    if (!isNaN(delta) && delta !== 0) onAddPoints(memberId, delta);
+    setEditPointsId(null); setPointsDelta("");
+  };
+
   return (
     <div style={{overflowX:"auto"}}>
       <table style={{width:"100%",borderCollapse:"collapse"}}>
@@ -2172,7 +2236,7 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
           <tr style={{background:"rgba(255,255,255,0.02)"}}>
             <th style={TH}>Member</th>
             <th style={TH}>Class</th>
-            <th style={TH}>Role</th>
+            <th style={{...TH,color:"#a78bfa"}}>Role</th>
             <th style={{...TH,color:"#fbbf24"}}>Points</th>
             <th style={TH}>Status</th>
             {canManage&&<th style={TH}>Actions</th>}
@@ -2183,6 +2247,7 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
           {filtered.map(m=>{
             const rs=ROLE_STYLE[m.role]||ROLE_STYLE.Member;
             const ss=STATUS_STYLE[m.status]||STATUS_STYLE.Offline;
+            const isEditingPoints = editPointsId === m.id;
             return (
               <tr key={m.id} className="tr-row" style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
                 <td style={{padding:"13px 18px"}}>
@@ -2193,18 +2258,44 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
                 </td>
                 <td style={{padding:"13px 18px",color:"#64748b",fontSize:12.5}}>{m.cls||"—"}</td>
                 <td style={{padding:"13px 18px"}}>
-                  <span style={{display:"inline-flex",padding:"4px 11px",borderRadius:7,background:rs.bg,color:rs.color,border:`1px solid ${rs.border}`,fontSize:10.5,fontWeight:700,letterSpacing:"0.04em"}}>{m.role}</span>
+                  {canManage && onChangeRole && m.role !== "Admin" && m.id !== currentUser?.id ? (
+                    <select
+                      value={m.role}
+                      onChange={e=>onChangeRole(m.id, e.target.value)}
+                      style={{background:rs.bg,color:rs.color,border:`1px solid ${rs.border}`,borderRadius:7,padding:"4px 8px",fontSize:10.5,fontWeight:700,cursor:"pointer",fontFamily:"'Exo 2',sans-serif",outline:"none"}}>
+                      {ASSIGNABLE_ROLES.map(r=><option key={r} value={r} style={{background:"#0a0c18"}}>{r}</option>)}
+                    </select>
+                  ) : (
+                    <span style={{display:"inline-flex",padding:"4px 11px",borderRadius:7,background:rs.bg,color:rs.color,border:`1px solid ${rs.border}`,fontSize:10.5,fontWeight:700,letterSpacing:"0.04em"}}>{m.role}</span>
+                  )}
                 </td>
                 <td style={{padding:"13px 18px"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{color:"#fbbf24",fontWeight:700,fontSize:15,fontFamily:"'Rajdhani',sans-serif"}}>{(m.points||0).toLocaleString()}</span>
-                    {onAddPoints&&(
-                      <div className="points-ctrl">
-                        <button className="pts-btn" onClick={()=>onAddPoints(m.id,100)} style={{background:"rgba(52,211,153,0.15)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399"}}>+</button>
-                        <button className="pts-btn" onClick={()=>onAddPoints(m.id,-100)} style={{background:"rgba(248,113,113,0.12)",border:"1px solid rgba(248,113,113,0.25)",color:"#f87171"}}>−</button>
-                      </div>
-                    )}
-                  </div>
+                  {isEditingPoints ? (
+                    <div style={{display:"flex",alignItems:"center",gap:5}}>
+                      <input
+                        type="number"
+                        value={pointsDelta}
+                        onChange={e=>setPointsDelta(e.target.value)}
+                        onKeyDown={e=>{ if(e.key==="Enter") handlePointsSubmit(m.id); if(e.key==="Escape"){setEditPointsId(null);setPointsDelta("");} }}
+                        autoFocus
+                        placeholder="±pts"
+                        style={{width:70,background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:7,padding:"4px 8px",color:"#fbbf24",fontSize:12,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,outline:"none",textAlign:"center"}}
+                      />
+                      <button onClick={()=>handlePointsSubmit(m.id)} style={{background:"rgba(52,211,153,0.15)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",borderRadius:6,padding:"4px 7px",cursor:"pointer",fontSize:12,fontWeight:700}}>✓</button>
+                      <button onClick={()=>{setEditPointsId(null);setPointsDelta("");}} style={{background:"rgba(248,113,113,0.12)",border:"1px solid rgba(248,113,113,0.25)",color:"#f87171",borderRadius:6,padding:"4px 7px",cursor:"pointer",fontSize:12}}>✕</button>
+                    </div>
+                  ) : (
+                    <div style={{display:"flex",alignItems:"center",gap:7}}>
+                      <span style={{color:"#fbbf24",fontWeight:700,fontSize:15,fontFamily:"'Rajdhani',sans-serif"}}>{(m.points||0).toLocaleString()}</span>
+                      {onAddPoints&&(
+                        <div className="points-ctrl" style={{display:"flex",gap:3}}>
+                          <button className="pts-btn" onClick={()=>onAddPoints(m.id,100)} style={{background:"rgba(52,211,153,0.15)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399"}}>+</button>
+                          <button className="pts-btn" onClick={()=>onAddPoints(m.id,-100)} style={{background:"rgba(248,113,113,0.12)",border:"1px solid rgba(248,113,113,0.25)",color:"#f87171"}}>−</button>
+                          <button className="pts-btn" onClick={()=>{setEditPointsId(m.id);setPointsDelta("");}} style={{background:"rgba(96,165,250,0.12)",border:"1px solid rgba(96,165,250,0.25)",color:"#60a5fa",fontSize:10}}>✏️</button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </td>
                 <td style={{padding:"13px 18px"}}>
                   <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"4px 11px",borderRadius:7,background:ss.bg,color:ss.color,fontSize:10.5,fontWeight:700}}>
@@ -2215,7 +2306,7 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
                   <td style={{padding:"13px 18px"}}>
                     <div style={{display:"flex",gap:6}}>
                       <button className="ghost-btn" onClick={()=>onEdit(m)}>✏️</button>
-                      {m.role!=="Leader"&&<button className="ghost-btn" onClick={()=>onRemove(m.id)} style={{color:"#f87171"}}>🗑️</button>}
+                      {m.role!=="Leader"&&m.role!=="Admin"&&<button className="ghost-btn" onClick={()=>onRemove(m.id)} style={{color:"#f87171"}}>🗑️</button>}
                     </div>
                   </td>
                 )}
@@ -2502,103 +2593,112 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, k
 
 // ── Boss Group Panel (full page) ─────────────────────────────────────────────
 function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, killFlash, onKill, onReset, onSetTimer, onImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels }) {
-  // Group bosses by unique name
   const bossNames = [...new Set(bosses.map(b=>b.name))];
-  const [editRespawn, setEditRespawn] = useState(null); // {id, val}
+  const [editRespawn, setEditRespawn] = useState(null);
+  const [collapsed, setCollapsed] = useState(false);
+  const liveCount = bosses.filter(b=>b.secs===0).length;
 
   return(
-    <div style={{background:"rgba(255,255,255,0.02)",border:`1px solid ${color}30`,borderRadius:18,padding:"18px 20px",marginBottom:22}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
-        <div>
-          <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color,letterSpacing:"0.04em"}}>{title}</div>
-          <div style={{fontSize:11,color:"#3d5070",marginTop:2}}>{subtitle}</div>
+    <div style={{background:"rgba(255,255,255,0.02)",border:`1px solid ${color}35`,borderRadius:18,overflow:"hidden",marginBottom:22,boxShadow:`0 0 30px ${color}08`}}>
+      {/* Header — same style as Folkvang */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:collapsed?"none":`1px solid ${color}20`,cursor:"pointer",background:`${color}05`}}
+        onClick={()=>setCollapsed(p=>!p)}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:15,fontWeight:700,color,letterSpacing:"0.06em"}}>{title}</div>
+          <div style={{fontSize:10,color:"#3d5070",marginTop:1}}>{subtitle}</div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+          <span style={{fontSize:9.5,padding:"3px 9px",borderRadius:6,background:"rgba(52,211,153,0.13)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",fontWeight:700,letterSpacing:"0.06em"}}>{liveCount}/{bosses.length} LIVE</span>
+          <span style={{color:"#3d5070",fontSize:14,transition:"transform 0.2s",display:"inline-block",transform:collapsed?"rotate(0deg)":"rotate(180deg)"}}>▾</span>
         </div>
       </div>
-      {bossNames.map(bossName=>{
-        const bossChannels = bosses.filter(b=>b.name===bossName);
-        const templateBoss = bossChannels[0];
-        return(
-          <div key={bossName} style={{marginBottom:18}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-              <div style={{fontSize:13,fontWeight:700,color:"#94a3b8",letterSpacing:"0.04em"}}>
-                {floorLabels ? `${templateBoss.floor} · ${bossName}` : bossName}
-              </div>
-              {canManage&&onAddChannel&&(
-                <button className="ghost-btn" onClick={()=>onAddChannel(bossName, templateBoss.color)}
-                  style={{fontSize:10,padding:"4px 10px",color:"#60a5fa",borderColor:"rgba(96,165,250,0.3)"}}>
-                  ➕ Add Channel
-                </button>
-              )}
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
-              {bossChannels.map(b=>{
-                const st=bossStatus(b.secs);
-                const bs=BOSS_STATUS_STYLE[st];
-                const respH=Math.floor((b.respawnSecs||0)/3600),respM=Math.floor(((b.respawnSecs||0)%3600)/60),respS=(b.respawnSecs||0)%60;
-                return(
-                  <div key={b.id} className={`boss-card${killFlash===b.id?" kill-flash":""}`}
-                    style={{background:"rgba(255,255,255,0.03)",border:`1px solid rgba(255,255,255,0.07)`,borderRadius:16,padding:"16px",position:"relative",overflow:"hidden"}}>
-                    <div style={{position:"absolute",left:0,top:0,bottom:0,width:4,background:b.color,borderRadius:"4px 0 0 4px"}} />
 
-                    <div style={{display:"flex",alignItems:"center",gap:11,marginBottom:10}}>
-                      <div className="boss-img-upload" onClick={()=>canManage&&onImage(b.id)}
-                        style={{width:78,height:78,borderRadius:12,background:b.color+"22",border:`2px solid ${b.color}44`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0,position:"relative",cursor:canManage?"pointer":"default"}}>
-                        {b.image ? <img src={b.image} alt={b.name} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span style={{fontSize:28}}>👹</span>}
-                        {canManage&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s"}} className="boss-img-ov"><span style={{fontSize:16}}>📷</span></div>}
-                      </div>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.02em"}}>{b.name}</div>
-                        <div style={{fontSize:10.5,color:"#3d5070",marginTop:2}}>Channel {b.channel}</div>
-                        <span style={{display:"inline-flex",alignItems:"center",padding:"2px 8px",borderRadius:6,background:bs.bg,color:bs.color,border:`1px solid ${bs.border}`,fontSize:10,fontWeight:700,marginTop:4}}>{st}</span>
-                      </div>
-                      {canManage&&onRemoveChannel&&bossChannels.length>1&&(
-                        <button onClick={()=>onRemoveChannel(b.id)} style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.2)",color:"#f87171",borderRadius:7,padding:"4px 8px",cursor:"pointer",fontSize:11,fontFamily:"'Exo 2',sans-serif",fontWeight:700,flexShrink:0}}>✕</button>
-                      )}
-                    </div>
-
-                    {/* Big timer */}
-                    <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:42,fontWeight:700,color:b.color,letterSpacing:"0.06em",lineHeight:1,textAlign:"center",marginBottom:4}}>
-                      {fmtSecs(b.secs)}
-                    </div>
-                    {b.secs===0&&b.elapsed>0&&(
-                      <div style={{textAlign:"center",fontSize:10.5,color:"#34d399",marginBottom:8}}>
-                        ⏱ Alive for {fmtSecs(b.elapsed)}
-                      </div>
-                    )}
-                    {b.secs===0&&!b.elapsed&&<div style={{marginBottom:8}} />}
-
-                    {/* Respawn time display + edit */}
-                    {showRespawnEdit&&b.respawnSecs!=null&&(
-                      <div style={{background:"rgba(255,255,255,0.03)",borderRadius:8,padding:"6px 10px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                        <span style={{fontSize:10,color:"#3d5070"}}>Respawn: {String(respH).padStart(2,"0")}:{String(respM).padStart(2,"0")}:{String(respS).padStart(2,"0")}</span>
-                        {canManage&&(
-                          <button onClick={()=>setEditRespawn({id:b.id,val:b.respawnSecs})}
-                            style={{fontSize:9.5,color:"#60a5fa",background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:5,padding:"2px 7px",cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:600}}>✏️ Edit</button>
-                        )}
-                      </div>
-                    )}
-
-                    {editRespawn?.id===b.id&&(
-                      <RespawnEditor current={editRespawn.val} onSave={(secs)=>{onRespawnEdit(b.id,secs);setEditRespawn(null);}} onCancel={()=>setEditRespawn(null)} />
-                    )}
-
-                    {canManage&&<>
-                      <button className="kill-btn" onClick={()=>onKill(b.id)} style={{background:`${b.color}20`,border:`1px solid ${b.color}45`,color:b.color,marginBottom:8,width:"100%"}}>
-                        ☠️ Mark Killed — start respawn
-                      </button>
-                      <div style={{display:"flex",gap:8}}>
-                        <button className="ghost-btn" onClick={()=>onReset(b.id)} style={{flex:1,fontSize:10.5,padding:"6px"}}>🔴 Set LIVE</button>
-                        <button className="ghost-btn" onClick={()=>onSetTimer(b.id)} style={{flex:1,fontSize:10.5,padding:"6px"}}>⏱ Set Timer</button>
-                      </div>
-                    </>}
-                    {!canManage&&<div style={{textAlign:"center",color:"#3d5070",fontSize:10.5,marginTop:4}}>👀 View only</div>}
+      {!collapsed && (
+        <div style={{padding:"14px 18px"}}>
+          {bossNames.map(bossName=>{
+            const bossChannels = bosses.filter(b=>b.name===bossName);
+            const templateBoss = bossChannels[0];
+            return(
+              <div key={bossName} style={{marginBottom:16}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#94a3b8",letterSpacing:"0.04em"}}>
+                    {floorLabels ? `${templateBoss.floor} · ${bossName}` : bossName}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
+                  {canManage&&onAddChannel&&(
+                    <button className="ghost-btn" onClick={()=>onAddChannel(bossName, templateBoss.color)}
+                      style={{fontSize:10,padding:"3px 8px",color:"#60a5fa",borderColor:"rgba(96,165,250,0.3)"}}>
+                      ➕ CH
+                    </button>
+                  )}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:10}}>
+                  {bossChannels.map(b=>{
+                    const st=bossStatus(b.secs);
+                    const bs=BOSS_STATUS_STYLE[st];
+                    return(
+                      <div key={b.id} className={`boss-card${killFlash===b.id?" kill-flash":""}`}
+                        style={{background:"rgba(255,255,255,0.03)",border:`1px solid rgba(255,255,255,0.07)`,borderRadius:13,padding:"12px 14px",position:"relative",overflow:"hidden"}}>
+                        <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:b.color,borderRadius:"3px 0 0 3px"}} />
+
+                        {/* Compact top row: image + info + status */}
+                        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                          {/* Boss image — 78x78, clickable to upload */}
+                          <div className="boss-img-upload" onClick={()=>canManage&&onImage(b.id)}
+                            style={{width:46,height:46,borderRadius:10,background:b.color+"22",border:`2px solid ${b.color}44`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0,position:"relative",cursor:canManage?"pointer":"default"}}>
+                            {b.image ? <img src={b.image} alt={b.name} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span style={{fontSize:20}}>👹</span>}
+                            {canManage&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",fontSize:12}} className="boss-img-ov">📷</div>}
+                          </div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:11.5,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>CH {b.channel}</div>
+                            <span style={{display:"inline-flex",alignItems:"center",padding:"2px 7px",borderRadius:5,background:bs.bg,color:bs.color,border:`1px solid ${bs.border}`,fontSize:9.5,fontWeight:700,marginTop:2}}>{st}</span>
+                          </div>
+                          {/* Big timer */}
+                          <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:28,fontWeight:700,color:b.color,letterSpacing:"0.04em",lineHeight:1,flexShrink:0,textAlign:"right"}}>
+                            {fmtSecs(b.secs)}
+                          </div>
+                          {canManage&&onRemoveChannel&&bossChannels.length>1&&(
+                            <button onClick={()=>onRemoveChannel(b.id)} style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.2)",color:"#f87171",borderRadius:6,padding:"3px 6px",cursor:"pointer",fontSize:10,fontFamily:"'Exo 2',sans-serif",fontWeight:700,flexShrink:0}}>✕</button>
+                          )}
+                        </div>
+
+                        {b.secs===0&&b.elapsed>0&&(
+                          <div style={{textAlign:"center",fontSize:10,color:"#34d399",marginBottom:6}}>⏱ Alive for {fmtSecs(b.elapsed)}</div>
+                        )}
+
+                        {/* Respawn time display */}
+                        {showRespawnEdit&&b.respawnSecs!=null&&(
+                          <div style={{background:"rgba(255,255,255,0.03)",borderRadius:7,padding:"4px 8px",marginBottom:7,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                            <span style={{fontSize:9.5,color:"#3d5070"}}>Respawn: {String(Math.floor((b.respawnSecs||0)/3600)).padStart(2,"0")}:{String(Math.floor(((b.respawnSecs||0)%3600)/60)).padStart(2,"0")}:{String((b.respawnSecs||0)%60).padStart(2,"0")}</span>
+                            {canManage&&(
+                              <button onClick={()=>setEditRespawn({id:b.id,val:b.respawnSecs})}
+                                style={{fontSize:9,color:"#60a5fa",background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:4,padding:"1px 6px",cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:600}}>✏️</button>
+                            )}
+                          </div>
+                        )}
+
+                        {editRespawn?.id===b.id&&(
+                          <RespawnEditor current={editRespawn.val} onSave={(secs)=>{onRespawnEdit(b.id,secs);setEditRespawn(null);}} onCancel={()=>setEditRespawn(null)} />
+                        )}
+
+                        {canManage&&<>
+                          <button className="kill-btn" onClick={()=>onKill(b.id)} style={{background:`${b.color}20`,border:`1px solid ${b.color}45`,color:b.color,marginBottom:6,width:"100%",fontSize:11,padding:"7px"}}>
+                            ☠️ Mark Killed
+                          </button>
+                          <div style={{display:"flex",gap:6}}>
+                            <button className="ghost-btn" onClick={()=>onReset(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>🔴 LIVE</button>
+                            <button className="ghost-btn" onClick={()=>onSetTimer(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>⏱ Timer</button>
+                          </div>
+                        </>}
+                        {!canManage&&<div style={{textAlign:"center",color:"#3d5070",fontSize:9.5,marginTop:4,display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>👀 View only</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
