@@ -24,26 +24,26 @@ const MOCK_LOGO = "https://mbalsusqtkbtoxuawjau.supabase.co/storage/v1/object/pu
 function makeBossId() { return Date.now() + Math.random(); }
 
 const DEFAULT_LIVE4 = [
-  { id:"l1a", name:"Cruel Outlaw Gand",  secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#f59e0b", image:null, group:"live4" },
-  { id:"l1b", name:"Cruel Outlaw Gand",  secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#f59e0b", image:null, group:"live4" },
-  { id:"l2a", name:"Gatekeeper Amot",    secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#60a5fa", image:null, group:"live4" },
-  { id:"l2b", name:"Gatekeeper Amot",    secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#60a5fa", image:null, group:"live4" },
-  { id:"l3a", name:"Destroyer Hawler",   secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#34d399", image:null, group:"live4" },
-  { id:"l3b", name:"Destroyer Hawler",   secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#34d399", image:null, group:"live4" },
-  { id:"l4a", name:"Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#a78bfa", image:null, group:"live4" },
-  { id:"l4b", name:"Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#a78bfa", image:null, group:"live4" },
+  { id:"l1a", name:"Lv.66 Cruel Outlaw Gand",  secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#f59e0b", image:null, group:"live4" },
+  { id:"l1b", name:"Lv.66 Cruel Outlaw Gand",  secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#f59e0b", image:null, group:"live4" },
+  { id:"l2a", name:"Lv.67 Gatekeeper Amot",    secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#60a5fa", image:null, group:"live4" },
+  { id:"l2b", name:"Lv.67 Gatekeeper Amot",    secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#60a5fa", image:null, group:"live4" },
+  { id:"l3a", name:"Lv.68 Destroyer Hawler",   secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#34d399", image:null, group:"live4" },
+  { id:"l3b", name:"Lv.68 Destroyer Hawler",   secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#34d399", image:null, group:"live4" },
+  { id:"l4a", name:"Lv.69 Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#a78bfa", image:null, group:"live4" },
+  { id:"l4b", name:"Lv.69 Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#a78bfa", image:null, group:"live4" },
 ];
 
 // Myrkrheim bosses — same 4 bosses, different group
 const DEFAULT_MYRKRHEIM = [
-  { id:"m1a", name:"Cruel Outlaw Gand",  secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#f59e0b", image:null, group:"myrkrheim" },
-  { id:"m1b", name:"Cruel Outlaw Gand",  secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#f59e0b", image:null, group:"myrkrheim" },
-  { id:"m2a", name:"Gatekeeper Amot",    secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#60a5fa", image:null, group:"myrkrheim" },
-  { id:"m2b", name:"Gatekeeper Amot",    secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#60a5fa", image:null, group:"myrkrheim" },
-  { id:"m3a", name:"Destroyer Hawler",   secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#34d399", image:null, group:"myrkrheim" },
-  { id:"m3b", name:"Destroyer Hawler",   secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#34d399", image:null, group:"myrkrheim" },
-  { id:"m4a", name:"Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#a78bfa", image:null, group:"myrkrheim" },
-  { id:"m4b", name:"Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#a78bfa", image:null, group:"myrkrheim" },
+  { id:"m1a", name:"Lv.66 Tre Sol Invading Captain",          secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#f59e0b", image:null, group:"myrkrheim" },
+  { id:"m1b", name:"Lv.66 Tre Sol Invading Captain",          secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#f59e0b", image:null, group:"myrkrheim" },
+  { id:"m2a", name:"Lv.67 Elder Troll Invading Captain",      secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#60a5fa", image:null, group:"myrkrheim" },
+  { id:"m2b", name:"Lv.67 Elder Troll Invading Captain",      secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#60a5fa", image:null, group:"myrkrheim" },
+  { id:"m3a", name:"Lv.68 Villainous Jotunn Combat Captain",  secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#34d399", image:null, group:"myrkrheim" },
+  { id:"m3b", name:"Lv.68 Villainous Jotunn Combat Captain",  secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#34d399", image:null, group:"myrkrheim" },
+  { id:"m4a", name:"Lv.68 Ferocious Fire Jotunn Fight Captain",secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#f97316", image:null, group:"myrkrheim" },
+  { id:"m4b", name:"Lv.68 Ferocious Fire Jotunn Fight Captain",secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#f97316", image:null, group:"myrkrheim" },
 ];
 
 // FOLKVANG floors: 1F-5F, Normal + Interserver
@@ -1185,6 +1185,18 @@ export default function App() {
               {/* ── OVERWORLD MAPS ── */}
               <OverworldMapsPanel canManage={canManage} />
 
+              {/* ── FOLKVANG · VALHALLA DUNGEON ── */}
+              <FolkvangDungeonCard
+                folkvangNormal={folkvangNormal}
+                folkvangInterserver={folkvangInterserver}
+                canManage={canManage}
+                killFlash={killFlash}
+                onKill={(id,group)=>handleMarkKilledGroup(id,group)}
+                onReset={(id,group)=>handleResetToZero(id,group)}
+                onSetTimer={(id,group)=>{setBossTimerModal({id,group});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
+                onImage={(id,group)=>{setBossImageModal({id,group});bossImgRef.current?.click();}}
+              />
+
               {/* Field Boss Schedule */}
               <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:"18px 20px",marginBottom:22}}>
                 <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:"#f87171",marginBottom:12,letterSpacing:"0.04em"}}>👹 Field Boss Schedule (UTC+8)</div>
@@ -1236,18 +1248,6 @@ export default function App() {
                 onAddChannel={(bossName,color)=>handleAddChannel("live4",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"live4")}
                 showRespawnEdit={false}
-              />
-
-              {/* ── FOLKVANG VALHALLA DUNGEON ── */}
-              <FolkvangDungeonCard
-                folkvangNormal={folkvangNormal}
-                folkvangInterserver={folkvangInterserver}
-                canManage={canManage}
-                killFlash={killFlash}
-                onKill={(id,group)=>handleMarkKilledGroup(id,group)}
-                onReset={(id,group)=>handleResetToZero(id,group)}
-                onSetTimer={(id,group)=>{setBossTimerModal({id,group});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
-                onImage={(id,group)=>{setBossImageModal({id,group});bossImgRef.current?.click();}}
               />
 
               {/* ── CANYON OF NIDAVELLIR ── */}
