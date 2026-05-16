@@ -123,12 +123,10 @@ const EVENT_TYPES = [
 
 // ── Field Boss schedule (from game) ─────────────────────────────────────────
 const FIELD_BOSS_SCHEDULE = [
-  { name:"Twilight Overlord Rogvalt",  map:"Canyon of the World Tree Depth",  days:["Sunday","Wednesday","Saturday"],          time:"21:00", interserver:false },
-  { name:"Nargrim",                    map:"Vale of Ragnarok",                 days:["Monday","Saturday"],                      time:"21:05", interserver:false },
-  { name:"Faded Oath Vargreif",        map:"Crossroads of Ragnarok",           days:["Wednesday","Friday"],                     time:"21:10", interserver:false },
-  { name:"Twilight Disaster Nirva",    map:"(Inter-Server) Folkvang 5F",       days:["Sunday","Monday","Friday"],               time:"21:15", interserver:true  },
-  { name:"Forgotten Holy Temple Boss", map:"Forgotten Holy Temple",            days:["Sunday","Tuesday","Thursday","Saturday"], time:"21:20", interserver:false },
-  { name:"Sindri Island Battle",       map:"Sindri Island",                    days:["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"], time:"All Day", interserver:true, allDay:true },
+  { name:"Twilight Overlord Rogvalt", map:"Canyon of the World Tree Depth", days:["Sunday","Wednesday","Saturday"], time:"21:00" },
+  { name:"Nargrim",                   map:"Vale of Ragnarok",                days:["Monday","Saturday"],            time:"21:05" },
+  { name:"Faded Oath Vargreif",       map:"Crossroads of Ragnarok",          days:["Wednesday","Friday"],           time:"21:10" },
+  { name:"Twilight Disaster Nirva",   map:"(Inter-Server) Folkvang 5F",      days:["Sunday","Monday","Friday"],     time:"21:15" },
 ];
 
 const NAV = [
@@ -235,7 +233,6 @@ export default function App() {
   const [canyonBosses, setCanyonBosses]             = useState(()=>lsGet("rampageCanyon", DEFAULT_CANYON));
   const [lindwurmBosses, setLindwurmBosses]         = useState(()=>lsGet("rampageLindwurm", DEFAULT_LINDWURM));
   const [hildersBosses, setHildersBosses]           = useState(()=>lsGet("rampageHilders", DEFAULT_HILDERS));
-  const [bossTimerDb, setBossTimerDb]               = useState([]); // raw Supabase boss_timers records
   const [bossTimerModal, setBossTimerModal]         = useState(null); // {id, group}
   const [timerHH, setTimerHH]   = useState("0");
   const [timerMM, setTimerMM]   = useState("0");
@@ -367,15 +364,13 @@ export default function App() {
     return () => { mounted=false; subscription.unsubscribe(); };
   },[]);
 
-  // ── Load members from Supabase ────────────────────────────────────────────
+  // ── Load data from Supabase on mount ─────────────────────────────────────
   useEffect(()=>{
-    // Clear old localStorage auction cache — Supabase is now the source of truth
-    localStorage.removeItem("rampageAuction");
+    localStorage.removeItem("rampageAuction"); // clear stale cache
     loadMembers();
     loadAuctionItems();
     loadEvents();
     loadWinners();
-    loadBossTimers();
   },[]);
 
   // ── Supabase real-time subscriptions ─────────────────────────────────────
@@ -408,18 +403,11 @@ export default function App() {
       .on("postgres_changes",{event:"*",schema:"public",table:"winners"},()=>{ loadWinners(); })
       .subscribe();
 
-    // Boss timers real-time — syncs kill events and images to all users instantly
-    const bossTimerSub = supabase
-      .channel("boss_timers_rt")
-      .on("postgres_changes",{event:"*",schema:"public",table:"boss_timers"},()=>{ loadBossTimers(); })
-      .subscribe();
-
     return ()=>{
       supabase.removeChannel(auctionSub);
       supabase.removeChannel(membersSub);
       supabase.removeChannel(eventsSub);
       supabase.removeChannel(winnersSub);
-      supabase.removeChannel(bossTimerSub);
     };
   },[]);
 
@@ -487,39 +475,6 @@ export default function App() {
       setWinners(lsGet("rampageWinners",[]));
     }
   };
-
-  // ── Boss timers from Supabase (for real-time sync across all users) ────────
-  const loadBossTimers = async()=>{
-    try {
-      const { data, error } = await supabase.from("boss_timers").select("*");
-      if (!error && data) setBossTimerDb(data);
-    } catch(e) { console.error("loadBossTimers:", e); }
-  };
-
-  // Apply DB boss timer records to all boss group states
-  useEffect(()=>{
-    if (bossTimerDb.length === 0) return;
-    const applyTimers = (prev) => prev.map(b=>{
-      const rec = bossTimerDb.find(r=>r.id===b.id);
-      if (!rec) return b;
-      // Apply image from DB if present
-      const image = rec.image || b.image;
-      // Calculate current secs from killed_at timestamp
-      if (!rec.killed_at) return {...b, secs:0, elapsed:0, image};
-      const killedAt = new Date(rec.killed_at).getTime();
-      const elapsedSec = Math.floor((Date.now() - killedAt) / 1000);
-      const secs = Math.max(0, (rec.respawn_secs||0) - elapsedSec);
-      const elapsed = secs===0 ? Math.max(0, elapsedSec - (rec.respawn_secs||0)) : 0;
-      return {...b, secs, elapsed, image};
-    });
-    setBosses(applyTimers);
-    setMyrkrheimBosses(applyTimers);
-    setFolkvangNormal(applyTimers);
-    setFolkvangInterserver(applyTimers);
-    setCanyonBosses(applyTimers);
-    setLindwurmBosses(applyTimers);
-    setHildersBosses(applyTimers);
-  },[bossTimerDb]);
 
   // Persist members locally as backup
   useEffect(()=>{ if(members.length>0) lsSet("rampageMembers",members); },[members]);
@@ -686,40 +641,25 @@ export default function App() {
   };
 
   // ── Boss actions ───────────────────────────────────────────────────────────
-  const handleMarkKilledGroup = async (id, group)=>{
+  const handleMarkKilledGroup = (id, group)=>{
     setKillFlash(id); setTimeout(()=>setKillFlash(null),700);
     const setter = getSetterByGroup(group);
-    // Find the boss to get its respawn time
-    const allBosses = [...bosses,...myrkrheimBosses,...folkvangNormal,...folkvangInterserver,...canyonBosses,...lindwurmBosses,...hildersBosses];
-    const boss = allBosses.find(b=>b.id===id);
-    const respawnSecs = boss?.respawnSecs != null
-      ? boss.respawnSecs
-      : Math.floor(((boss?.minR||30) + Math.random()*((boss?.maxR||90)-(boss?.minR||30)))*60);
-    // Update local state immediately so the UI responds instantly
-    setter(prev=>prev.map(b=>b.id===id?{...b,secs:respawnSecs,elapsed:0}:b));
-    // Save to Supabase so all other users see the update in real-time
-    try {
-      await supabase.from("boss_timers").upsert({
-        id,
-        killed_at: new Date().toISOString(),
-        respawn_secs: respawnSecs,
-        updated_at: new Date().toISOString(),
-      },{onConflict:"id"});
-    } catch(e){ console.error("Boss timer upsert error:",e); }
+    setter(prev=>prev.map(b=>{
+      if(b.id!==id) return b;
+      // For live4 bosses use minR/maxR; for others use respawnSecs
+      const secs = b.respawnSecs != null
+        ? b.respawnSecs
+        : Math.floor((b.minR + Math.random()*(b.maxR-b.minR))*60);
+      return {...b, secs, elapsed:0};
+    }));
     if(discordConnected) showToast("📢 Discord notified: Boss killed!","info");
   };
 
   const handleMarkKilled = (id)=> handleMarkKilledGroup(id, "live4");
 
-  const handleResetToZero = async (id, group="live4")=>{
+  const handleResetToZero = (id, group="live4")=>{
     setKillFlash(id); setTimeout(()=>setKillFlash(null),700);
     getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,secs:0,elapsed:0}:b));
-    // Clear killed_at in Supabase so all users see boss as LIVE
-    try {
-      await supabase.from("boss_timers").upsert({
-        id, killed_at:null, respawn_secs:0, updated_at:new Date().toISOString(),
-      },{onConflict:"id"});
-    } catch(e){ console.error("Boss reset error:",e); }
   };
 
   const handleSetManual = ()=>{
@@ -730,21 +670,11 @@ export default function App() {
   };
 
   // New HH:MM:SS timer setter for all boss groups
-  const handleSetTimerHMS = async ()=>{
+  const handleSetTimerHMS = ()=>{
     if(!bossTimerModal) return;
     const {id,group} = bossTimerModal;
     const totalSecs = (parseInt(timerHH)||0)*3600 + (parseInt(timerMM)||0)*60 + (parseInt(timerSS)||0);
     getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,secs:totalSecs,elapsed:0}:b));
-    // Save to Supabase as a kill event so all users see the countdown
-    try {
-      const killedAt = new Date(Date.now() - (0) + 0).toISOString(); // killed "now", respawn in totalSecs
-      await supabase.from("boss_timers").upsert({
-        id,
-        killed_at: new Date().toISOString(),
-        respawn_secs: totalSecs,
-        updated_at: new Date().toISOString(),
-      },{onConflict:"id"});
-    } catch(e){ console.error("Set timer error:",e); }
     setBossTimerModal(null);
   };
 
@@ -800,15 +730,6 @@ export default function App() {
         // Add cache-bust timestamp so browser doesn't show stale image
         const freshUrl = `${publicUrl}?t=${Date.now()}`;
         getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:freshUrl}:b));
-        // Save image URL to Supabase boss_timers so ALL users see it
-        try {
-          const { error: imgErr } = await supabase.from("boss_timers")
-            .upsert({id, image:freshUrl, updated_at:new Date().toISOString()},{onConflict:"id"});
-          if(imgErr) {
-            // Row might not exist yet — try insert
-            await supabase.from("boss_timers").insert({id, image:freshUrl}).catch(()=>{});
-          }
-        } catch {}
         setBossImageModal(null);
         showToast("🖼️ Boss image uploaded!");
       }
@@ -1000,35 +921,61 @@ export default function App() {
     return true;
   };
 
-  // ── Auction image upload to Supabase storage ──────────────────────────────
+  // ── Auction image upload ──────────────────────────────────────────────────
   const handleAuctionImageUpload = async(e)=>{
     const file = e.target.files?.[0]; if(!file) return;
     setAuctionImgUploading(true);
+
+    // Step 1: Try Supabase Storage first (best option — stores URL not raw data)
     try {
       const ext = file.name.split(".").pop();
       const path = `auction/${Date.now()}.${ext}`;
-      const { error } = await supabase.storage.from("asset").upload(path, file, {cacheControl:"3600",upsert:false});
+      const { error } = await supabase.storage.from("auction-images").upload(path, file, {cacheControl:"3600",upsert:false});
       if(!error) {
-        const { data: urlData } = supabase.storage.from("asset").getPublicUrl(path);
+        const { data: urlData } = supabase.storage.from("auction-images").getPublicUrl(path);
         setAuctionForm(p=>({...p,imageUrl:urlData.publicUrl,image:null}));
         showToast("🖼️ Image uploaded!");
-      } else {
-        // fallback: local base64
-        const reader = new FileReader();
-        reader.onload = ev=>setAuctionForm(p=>({...p,imageUrl:ev.target.result,image:null}));
-        reader.readAsDataURL(file);
+        setAuctionImgUploading(false);
+        return;
       }
-    } catch {
-      const reader = new FileReader();
-      reader.onload = ev=>setAuctionForm(p=>({...p,imageUrl:ev.target.result,image:null}));
-      reader.readAsDataURL(file);
-    }
+    } catch {}
+
+    // Step 2: Fallback — compress image to small thumbnail (max 80x80, JPEG quality 0.6)
+    // This keeps base64 under ~8KB which is safe for Supabase TEXT column
+    try {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.onload = ()=>{
+        const canvas = document.createElement("canvas");
+        const MAX = 80;
+        const scale = Math.min(MAX/img.width, MAX/img.height, 1);
+        canvas.width = Math.round(img.width*scale);
+        canvas.height = Math.round(img.height*scale);
+        canvas.getContext("2d").drawImage(img,0,0,canvas.width,canvas.height);
+        const compressed = canvas.toDataURL("image/jpeg", 0.6);
+        setAuctionForm(p=>({...p,imageUrl:compressed,image:null}));
+        URL.revokeObjectURL(objectUrl);
+        showToast("🖼️ Image ready (compressed)");
+        setAuctionImgUploading(false);
+      };
+      img.onerror = ()=>{ setAuctionImgUploading(false); showToast("❌ Image load failed","error"); };
+      img.src = objectUrl;
+      return;
+    } catch {}
+
     setAuctionImgUploading(false);
+    showToast("❌ Image upload failed","error");
   };
 
   const handleAddAuctionItem = async()=>{
     if(!auctionForm.name.trim()) { showToast("❌ Item name required","error"); return; }
     const endTime = Date.now() + (parseFloat(auctionForm.durationHours)||24)*3600000;
+    // Safety: if imageUrl is a huge base64 (>50KB), strip it and use emoji fallback
+    let safeImage = auctionForm.imageUrl || "🏺";
+    if(safeImage.startsWith("data:") && safeImage.length > 50000) {
+      showToast("⚠️ Image too large — using default icon. Use Supabase Storage for real images.","warn");
+      safeImage = "🏺";
+    }
     const item = {
       id: String(Date.now()),
       name: auctionForm.name,
@@ -1037,7 +984,7 @@ export default function App() {
       currentBid: 0, highBidder: null,
       bids: [],
       locked: false, winner: null, claimed: false,
-      image: auctionForm.imageUrl || "🏺",
+      image: safeImage,
       end_time: new Date(endTime).toISOString(),
       endTime,
       created_at: new Date().toISOString(),
@@ -1045,14 +992,19 @@ export default function App() {
     try {
       const dbItem = {...item, bids:JSON.stringify([]), endTime:undefined};
       const { error } = await supabase.from("auction_items").insert([dbItem]);
-      if(error) throw error;
+      if(error) {
+        console.error("Supabase insert error:", error);
+        showToast(`❌ Save failed: ${error.message}`,"error");
+        return; // Don't close modal — let admin see the error
+      }
       await loadAuctionItems();
-    } catch {
-      setAuctionItems(prev=>[item,...prev]);
+      setShowAddAuction(false);
+      setAuctionForm({name:"",rarity:"Epic",minBid:1000,durationHours:24,image:null,imageUrl:""});
+      showToast(`✅ ${item.name} added to auction!`);
+    } catch(err) {
+      console.error("Auction insert exception:", err);
+      showToast("❌ Could not save to database — check console","error");
     }
-    setShowAddAuction(false);
-    setAuctionForm({name:"",rarity:"Epic",minBid:1000,durationHours:24,image:null,imageUrl:""});
-    showToast(`✅ ${item.name} added to auction!`);
   };
 
   const handleEditAuctionItem = async()=>{
@@ -1440,9 +1392,6 @@ export default function App() {
               ))}
             </div>
 
-            {/* ── BOSS APPEARANCE SCHEDULE ── */}
-            <BossSchedulePanel />
-
             <div style={{background:"linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.07)",borderRadius:20,overflow:"hidden"}}>
               <div style={{padding:"16px 22px 12px",borderBottom:"1px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
@@ -1481,6 +1430,9 @@ export default function App() {
                 <span>Boss timers <strong>persist across sessions</strong> — they continue counting down even after refresh. Elapsed time shown when boss is LIVE.</span>
               </div>
 
+              {/* ── OVERWORLD MAPS ── */}
+              <OverworldMapsPanel canManage={canManage} />
+
               {/* ── FOLKVANG · VALHALLA DUNGEON ── */}
               <FolkvangDungeonCard
                 folkvangNormal={folkvangNormal}
@@ -1492,6 +1444,23 @@ export default function App() {
                 onSetTimer={(id,group)=>{setBossTimerModal({id,group});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
                 onImage={(id,group)=>{setBossImageModal({id,group});bossImgRef.current?.click();}}
               />
+
+              {/* Field Boss Schedule */}
+              <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:"18px 20px",marginBottom:22}}>
+                <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:"#f87171",marginBottom:12,letterSpacing:"0.04em"}}>👹 Field Boss Schedule (UTC+8)</div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
+                  {FIELD_BOSS_SCHEDULE.map((b,i)=>{
+                    const isToday = b.days.includes(getDayName());
+                    return(
+                      <div key={i} style={{background:isToday?"rgba(248,113,113,0.08)":"rgba(255,255,255,0.02)",border:`1px solid ${isToday?"rgba(248,113,113,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:11,padding:"12px 14px"}}>
+                        <div style={{fontSize:12.5,fontWeight:700,color:isToday?"#f87171":"#e2e8f0"}}>{b.name}{isToday&&<span style={{marginLeft:8,fontSize:10,background:"rgba(248,113,113,0.2)",color:"#f87171",padding:"1px 6px",borderRadius:4}}>TODAY</span>}</div>
+                        <div style={{fontSize:10.5,color:"#3d5070",marginTop:3}}>{b.map}</div>
+                        <div style={{fontSize:11,color:"#60a5fa",marginTop:4}}>{b.days.join(", ")} · {b.time}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
 
               {/* ── MYRKRHEIM BOSSES ── */}
               <BossGroupPanel
@@ -2724,161 +2693,6 @@ function MapTypeBadge({ type }) {
   );
 }
 
-// ── Boss Appearance Schedule Panel (collapsible, animated) ─────────────────
-function BossSchedulePanel() {
-  const [collapsed, setCollapsed] = useState(false);
-  const [now, setNow] = useState(()=>new Date());
-
-  useEffect(()=>{
-    const t = setInterval(()=>setNow(new Date()), 60000);
-    return ()=>clearInterval(t);
-  },[]);
-
-  const DAY_FULL  = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
-  const DAY_SHORT = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-
-  // Get current day name in UTC+8
-  const dayName = now.toLocaleDateString("en-US",{weekday:"long",timeZone:"Asia/Manila"});
-  const timeStr = now.toLocaleTimeString("en-US",{hour:"2-digit",minute:"2-digit",hour12:false,timeZone:"Asia/Manila"});
-  const todayIdx = DAY_FULL.indexOf(dayName);
-
-  return (
-    <div style={{
-      background:"rgba(255,255,255,0.02)",
-      border:"1px solid rgba(245,158,11,0.3)",
-      borderRadius:18,
-      overflow:"hidden",
-      marginBottom:22,
-      boxShadow:"0 0 40px rgba(245,158,11,0.05)",
-    }}>
-      {/* ── Header — click to collapse ── */}
-      <div
-        onClick={()=>setCollapsed(p=>!p)}
-        style={{
-          display:"flex",alignItems:"center",justifyContent:"space-between",
-          padding:"14px 20px",
-          background:"rgba(245,158,11,0.06)",
-          borderBottom: collapsed ? "none" : "1px solid rgba(245,158,11,0.15)",
-          cursor:"pointer",
-          userSelect:"none",
-        }}
-      >
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:38,height:38,borderRadius:10,background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.35)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>👹</div>
-          <div>
-            <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:"#fbbf24",letterSpacing:"0.06em"}}>BOSS APPEARANCE SCHEDULE</div>
-            <div style={{fontSize:10.5,color:"#3d5070",marginTop:1}}>Field Boss & Sindri Island · UTC+8 Regional Time</div>
-          </div>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-          <span style={{fontSize:10.5,color:"#fbbf24",background:"rgba(245,158,11,0.1)",border:"1px solid rgba(245,158,11,0.25)",padding:"3px 10px",borderRadius:6,fontWeight:700,fontFamily:"'Exo 2',sans-serif"}}>
-            {dayName.slice(0,3).toUpperCase()} · {timeStr}
-          </span>
-          <span style={{
-            color:"#fbbf24",fontSize:13,
-            display:"inline-block",
-            transform: collapsed ? "rotate(0deg)" : "rotate(180deg)",
-            transition:"transform 0.3s cubic-bezier(0.4,0,0.2,1)",
-          }}>▾</span>
-        </div>
-      </div>
-
-      {/* ── Body — animated collapse via maxHeight ── */}
-      <div style={{
-        maxHeight: collapsed ? 0 : 700,
-        overflow:"hidden",
-        transition:"max-height 0.4s cubic-bezier(0.4,0,0.2,1)",
-      }}>
-        <div style={{padding:"16px 20px"}}>
-
-          {/* Day column headers */}
-          <div style={{display:"grid",gridTemplateColumns:"2fr 1.6fr 0.8fr repeat(7,1fr)",gap:4,marginBottom:8,alignItems:"center"}}>
-            <div style={{fontSize:9,color:"#3d5070",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase"}}>Boss</div>
-            <div style={{fontSize:9,color:"#3d5070",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase"}}>Map</div>
-            <div style={{fontSize:9,color:"#3d5070",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase"}}>Time</div>
-            {DAY_SHORT.map((d,i)=>(
-              <div key={d} style={{
-                textAlign:"center",fontSize:9,fontWeight:700,letterSpacing:"0.04em",
-                color: i===todayIdx ? "#fbbf24" : "#3d5070",
-                background: i===todayIdx ? "rgba(245,158,11,0.12)" : "transparent",
-                borderRadius:4,padding:"2px 0",
-              }}>{d}</div>
-            ))}
-          </div>
-
-          {/* Boss rows */}
-          {FIELD_BOSS_SCHEDULE.map((b,idx)=>{
-            const isToday = !b.allDay && b.days.includes(dayName);
-            const isSindri = !!b.allDay;
-            return (
-              <div key={idx} style={{
-                display:"grid",
-                gridTemplateColumns:"2fr 1.6fr 0.8fr repeat(7,1fr)",
-                gap:4,
-                alignItems:"center",
-                padding:"9px 10px",
-                borderRadius:10,
-                marginBottom:5,
-                background: isSindri ? "rgba(99,102,241,0.08)" : isToday ? "rgba(245,158,11,0.08)" : "rgba(255,255,255,0.02)",
-                border: isSindri ? "1px solid rgba(99,102,241,0.25)" : isToday ? "1px solid rgba(245,158,11,0.3)" : "1px solid rgba(255,255,255,0.04)",
-                transition:"background 0.2s",
-              }}>
-                {/* Boss name */}
-                <div style={{fontSize:11.5,fontWeight:700,color: isSindri ? "#a5b4fc" : isToday ? "#fbbf24" : "#e2e8f0",lineHeight:1.3}}>
-                  {b.name}
-                  {isToday && <span style={{marginLeft:6,fontSize:8,background:"rgba(245,158,11,0.2)",color:"#fbbf24",padding:"1px 5px",borderRadius:3,verticalAlign:"middle",fontFamily:"'Exo 2',sans-serif",fontWeight:700}}>TODAY</span>}
-                  {isSindri && <span style={{marginLeft:6,fontSize:8,background:"rgba(99,102,241,0.2)",color:"#a5b4fc",padding:"1px 5px",borderRadius:3,verticalAlign:"middle",fontFamily:"'Exo 2',sans-serif",fontWeight:700}}>DAILY</span>}
-                </div>
-                {/* Map */}
-                <div>
-                  <div style={{fontSize:9.5,color:"#3d5070",lineHeight:1.3}}>{b.map}</div>
-                  {b.interserver && <div style={{fontSize:8,color:"#f87171",fontWeight:700,marginTop:1,letterSpacing:"0.04em"}}>INTER-SERVER</div>}
-                </div>
-                {/* Time */}
-                <div style={{fontSize:11,fontWeight:700,color: isSindri ? "#a5b4fc" : "#60a5fa",fontFamily:"'Rajdhani',sans-serif"}}>{b.time}</div>
-                {/* Day dots */}
-                {DAY_FULL.map((d,i)=>{
-                  const active = b.days.includes(d);
-                  const isNow  = i===todayIdx && active;
-                  return (
-                    <div key={d} style={{display:"flex",alignItems:"center",justifyContent:"center"}}>
-                      {isSindri
-                        ? <span style={{fontSize:10,color:"#818cf8"}}>✦</span>
-                        : active
-                          ? <div style={{width:isNow?10:7,height:isNow?10:7,borderRadius:"50%",background:isNow?"#fbbf24":"#475569",boxShadow:isNow?"0 0 7px #fbbf24":"none",transition:"all 0.2s"}} />
-                          : <div style={{width:5,height:5,borderRadius:"50%",background:"rgba(255,255,255,0.07)"}} />
-                      }
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
-
-          {/* Legend */}
-          <div style={{display:"flex",gap:14,marginTop:12,flexWrap:"wrap",paddingTop:10,borderTop:"1px solid rgba(255,255,255,0.05)"}}>
-            {[
-              {dot:"#fbbf24",glow:true, label:"Today"},
-              {dot:"#475569",glow:false,label:"Scheduled"},
-              {special:"✦",color:"#818cf8",label:"Sindri — runs all day every day"},
-            ].map((l,i)=>(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"#3d5070"}}>
-                {l.dot && <div style={{width:7,height:7,borderRadius:"50%",background:l.dot,boxShadow:l.glow?`0 0 5px ${l.dot}`:"none",flexShrink:0}} />}
-                {l.special && <span style={{color:l.color,fontSize:11}}>{l.special}</span>}
-                {l.label}
-              </div>
-            ))}
-          </div>
-
-          <div style={{marginTop:8,fontSize:9.5,color:"#2d3a52",lineHeight:1.7}}>
-            ⚠️ Bosses appear once per day · Resets daily 12:00 AM UTC+8 · Conquerors adjust respawn once/week (resets Tue 5 AM) · No changes 10:30 PM – 11:59 PM
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function OverworldMapsPanel({ canManage }) {
   const [expandedMap, setExpandedMap] = useState(null);
   const [mapStatuses, setMapStatuses] = useState(()=>{
@@ -3186,15 +3000,16 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, k
                           <RespawnEditor current={editRespawn.val} onSave={(secs)=>{onRespawnEdit(b.id,secs);setEditRespawn(null);}} onCancel={()=>setEditRespawn(null)} />
                         )}
 
-                        {/* All users can mark killed and set timer — syncs to everyone in real-time */}
-                        <button className="kill-btn" onClick={()=>onKill(b.id)} style={{background:`${b.color}20`,border:`1px solid ${b.color}45`,color:b.color,marginBottom:6,width:"100%",fontSize:11,padding:"7px"}}>
-                          ☠️ Mark Killed
-                        </button>
-                        <div style={{display:"flex",gap:6}}>
-                          <button className="ghost-btn" onClick={()=>onReset(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>🔴 LIVE</button>
-                          <button className="ghost-btn" onClick={()=>onSetTimer(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>⏱ Timer</button>
-                          {canManage&&onImage&&<button className="ghost-btn" onClick={()=>onImage(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>📷</button>}
-                        </div>
+                        {canManage&&<>
+                          <button className="kill-btn" onClick={()=>onKill(b.id)} style={{background:`${b.color}20`,border:`1px solid ${b.color}45`,color:b.color,marginBottom:6,width:"100%",fontSize:11,padding:"7px"}}>
+                            ☠️ Mark Killed
+                          </button>
+                          <div style={{display:"flex",gap:6}}>
+                            <button className="ghost-btn" onClick={()=>onReset(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>🔴 LIVE</button>
+                            <button className="ghost-btn" onClick={()=>onSetTimer(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>⏱ Timer</button>
+                          </div>
+                        </>}
+                        {!canManage&&<div style={{textAlign:"center",color:"#3d5070",fontSize:9.5,marginTop:4,display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>👀 View only</div>}
                       </div>
                     );
                   })}
