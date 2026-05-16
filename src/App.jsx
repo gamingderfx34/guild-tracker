@@ -426,7 +426,7 @@ export default function App() {
   const loadAuctionItems = async()=>{
     try {
       const { data, error } = await supabase.from("auction_items").select("*").order("created_at",{ascending:false});
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         setAuctionItems(data.map(i=>({
           ...i,
           bids: typeof i.bids === "string" ? JSON.parse(i.bids) : (i.bids||[]),
@@ -443,9 +443,17 @@ export default function App() {
         setEvents(data.map(ev=>({
           ...ev,
           attendance: typeof ev.attendance === "string" ? JSON.parse(ev.attendance) : (ev.attendance||{}),
+          att_code: typeof ev.att_code === "string" ? JSON.parse(ev.att_code) : (ev.att_code||null),
         })));
+        // Populate local att codes from Supabase so check-in works on all devices
+        const codes = {};
+        data.forEach(ev=>{
+          if (ev.att_code) {
+            codes[ev.id] = typeof ev.att_code === "string" ? JSON.parse(ev.att_code) : ev.att_code;
+          }
+        });
+        if (Object.keys(codes).length > 0) setEventAttCodes(prev=>({...prev,...codes}));
       } else {
-        // Fallback: try localStorage
         setEvents(lsGet("rampageEvents",[]));
       }
     } catch {
@@ -878,20 +886,35 @@ export default function App() {
   };
 
   const handleMemberSelfAttendance = async(eventId, code)=>{
-    const stored = eventAttCodes[eventId];
-    if(!stored) { showToast("❌ No active code for this event","error"); return false; }
-    if(Date.now() > stored.expiresAt) { showToast("❌ Code expired — ask admin for new code","error"); return false; }
-    if(stored.code.toUpperCase() !== code.toUpperCase().trim()) { showToast("❌ Wrong code","error"); return false; }
-    if(stored.usedBy?.includes(currentUser?.name)) { showToast("⚠️ You already checked in!","warn"); return false; }
+    // Always read the code from Supabase (the source of truth), not local state
+    let stored = null;
+    try {
+      const { data } = await supabase.from("events").select("att_code").eq("id", eventId).single();
+      if (data?.att_code) {
+        stored = typeof data.att_code === "string" ? JSON.parse(data.att_code) : data.att_code;
+      }
+    } catch {}
+    // Fallback to local state if Supabase fails
+    if (!stored) stored = eventAttCodes[eventId];
+
+    if(!stored || !stored.code) { showToast("❌ No active code for this event — ask admin to generate one","error"); return false; }
+    if(Date.now() > stored.expiresAt) { showToast("❌ Code expired — ask admin for a new code","error"); return false; }
+    if(stored.code.toUpperCase() !== code.toUpperCase().trim()) { showToast("❌ Wrong code — try again","error"); return false; }
+    if(stored.usedBy?.includes(currentUser?.name)) { showToast("⚠️ You already checked in for this event!","warn"); return false; }
+
     // Mark self as present
     const myMember = members.find(m=>m.name===currentUser?.name);
     if(!myMember) { showToast("❌ Could not find your member profile","error"); return false; }
     await handleMarkEventAttendance(eventId, myMember.id, true);
-    // Record usage
-    setEventAttCodes(prev=>({
-      ...prev,[eventId]:{...stored, usedBy:[...(stored.usedBy||[]), currentUser?.name]}
-    }));
-    showToast("✅ Attendance recorded!");
+
+    // Update usedBy in Supabase so the same code can't be reused
+    const updatedCode = {...stored, usedBy:[...(stored.usedBy||[]), currentUser?.name]};
+    try {
+      await supabase.from("events").update({ att_code: JSON.stringify(updatedCode) }).eq("id", eventId);
+    } catch {}
+    setEventAttCodes(prev=>({...prev,[eventId]:updatedCode}));
+
+    showToast("✅ Attendance recorded! Points awarded.");
     setShowMemberAttModal(null); setAttCodeInput("");
     return true;
   };
