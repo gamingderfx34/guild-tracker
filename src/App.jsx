@@ -967,7 +967,11 @@ export default function App() {
   };
 
   // ── Derived ───────────────────────────────────────────────────────────────
-  const filtered       = members.filter(m=>m.name.toLowerCase().includes(search.toLowerCase())||m.cls?.toLowerCase().includes(search.toLowerCase()));
+  const ROLE_ORDER = { Leader:0, Elder:1, Member:2, Recruit:3, Admin:99 };
+  const filtered = members
+    .filter(m=>m.role!=="Admin") // hide Admin from members list
+    .filter(m=>m.name.toLowerCase().includes(search.toLowerCase())||m.cls?.toLowerCase().includes(search.toLowerCase()))
+    .sort((a,b)=>(ROLE_ORDER[a.role]??99)-(ROLE_ORDER[b.role]??99));
   const activeCount    = members.filter(m=>m.status==="Active").length;
   const leaderCount    = members.filter(m=>m.role==="Leader").length;
   const elderCount     = members.filter(m=>m.role==="Elder").length;
