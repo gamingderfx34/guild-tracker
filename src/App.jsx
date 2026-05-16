@@ -375,18 +375,13 @@ export default function App() {
 
   // ── Supabase real-time subscriptions ─────────────────────────────────────
   useEffect(()=>{
-    // Auction items — use payload directly for zero-delay updates on bids
     const auctionSub = supabase
       .channel("auction_items_rt")
-      .on("postgres_changes",{event:"INSERT",schema:"public",table:"auction_items"},(payload)=>{
-        // New item listed — reload to get full formatted item
-        loadAuctionItems();
-      })
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); })
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"auction_items"},(payload)=>{
-        // Bid placed or item edited — apply immediately from payload, no DB round-trip
         const u = payload.new;
         setAuctionItems(prev=>prev.map(item=>{
-          if(String(item.id) !== String(u.id)) return item;
+          if(String(item.id)!==String(u.id)) return item;
           return {
             ...item,
             currentBid:  u.currentBid  ?? item.currentBid,
@@ -404,19 +399,16 @@ export default function App() {
       })
       .subscribe();
 
-    // Members — use payload for instant points update on all screens
     const membersSub = supabase
       .channel("members_rt")
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"members"},()=>{ loadMembers(); })
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"members"},(payload)=>{
-        // Update points and fields instantly from payload — no DB round-trip
         const u = payload.new;
-        setMembers(prev=>prev.map(m=>String(m.id)===String(u.id) ? {...m,...u} : m));
+        setMembers(prev=>prev.map(m=>String(m.id)===String(u.id)?{...m,...u}:m));
       })
       .on("postgres_changes",{event:"DELETE",schema:"public",table:"members"},()=>{ loadMembers(); })
       .subscribe();
 
-    // Events real-time
     const eventsSub = supabase
       .channel("events_rt")
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},()=>{ loadEvents(); })
@@ -424,7 +416,6 @@ export default function App() {
       .on("postgres_changes",{event:"DELETE",schema:"public",table:"events"},()=>{ loadEvents(); })
       .subscribe();
 
-    // Winners real-time
     const winnersSub = supabase
       .channel("winners_rt")
       .on("postgres_changes",{event:"*",schema:"public",table:"winners"},()=>{ loadWinners(); })
@@ -1061,86 +1052,86 @@ export default function App() {
     const amount = parseInt(bidAmount);
     const myMember = members.find(m=>m.name===currentUser?.name);
     const myPoints = myMember?.points || 0;
+    // Only Leader, Elder, Member can bid. Recruits must wait 7 days (game rule).
     const canBidRole = ["Leader","Elder","Member","Admin"].includes(currentUser?.role);
     if(!canBidRole) { showToast("❌ Recruits cannot bid — 7-day waiting period applies in-game","error"); return; }
     if(!bidModal||isNaN(amount)) { showToast("❌ Enter a valid amount","error"); return; }
     if(amount <= bidModal.currentBid && bidModal.currentBid > 0) { showToast(`❌ Bid must exceed ${bidModal.currentBid.toLocaleString()} pts`,"error"); return; }
     if(amount < bidModal.minBid) { showToast(`❌ Minimum bid is ${bidModal.minBid.toLocaleString()} pts`,"error"); return; }
     if(amount > myPoints) { showToast(`❌ Not enough points! You have ${myPoints.toLocaleString()} pts`,"error"); return; }
+    const myName = currentUser?.name||"Guest";
+    const newBid = {bidder:myName, amount, time:new Date().toLocaleTimeString()};
+    const updatedBids = [...(bidModal.bids||[]), newBid];
 
-    const myName        = currentUser?.name||"Guest";
+    // ── Points: deduct from new bidder, refund previous high bidder ───────────
     const prevHighBidder = bidModal.highBidder;
     const prevBidAmount  = bidModal.currentBid || 0;
-    const newBid         = {bidder:myName, amount, time:new Date().toLocaleTimeString()};
-    const updatedBids    = [...(bidModal.bids||[]), newBid];
 
-    // ── Close modal immediately so UI feels instant ────────────────────────
-    setBidModal(null); setBidAmount("");
-
-    // ── 1) Optimistic local update for the bidder ─────────────────────────
+    // 1) Deduct points from the new bidder
     const myUpdatedPoints = myPoints - amount;
-    setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points:myUpdatedPoints} : m));
-    setAuctionItems(prev=>prev.map(item=>
-      item.id!==bidModal.id ? item : {...item, currentBid:amount, highBidder:myName, bids:updatedBids}
-    ));
+    await supabase.from("members").update({points: myUpdatedPoints}).eq("id", myMember.id);
+    setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points: myUpdatedPoints} : m));
+    if(currentUser.id === myMember.id) setCurrentUser(prev=>({...prev, points: myUpdatedPoints}));
 
-    try {
-      // ── 2) Deduct points from bidder in DB ──────────────────────────────
-      const { error: deductErr } = await supabase.from("members")
-        .update({points: myUpdatedPoints})
-        .eq("id", myMember.id);
-      if(deductErr) throw new Error(`Deduct failed: ${deductErr.message}`);
-
-      // ── 3) Refund previous high bidder — fetch FRESH points from DB ─────
-      //    (avoids stale local state giving wrong refund amount)
-      if(prevHighBidder && prevHighBidder !== myName && prevBidAmount > 0) {
-        const { data: prevFresh, error: fetchErr } = await supabase
-          .from("members").select("id,points").eq("name", prevHighBidder).single();
-        if(!fetchErr && prevFresh) {
-          const refunded = (prevFresh.points || 0) + prevBidAmount;
-          await supabase.from("members").update({points: refunded}).eq("id", prevFresh.id);
-          // Also update local state for the refunded person
-          setMembers(prev=>prev.map(m=>m.id===prevFresh.id ? {...m, points:refunded} : m));
-        }
+    // 2) Refund the previous high bidder (if someone was outbid)
+    if(prevHighBidder && prevHighBidder !== myName && prevBidAmount > 0) {
+      const prevMember = members.find(m=>m.name===prevHighBidder);
+      if(prevMember) {
+        const refundedPoints = (prevMember.points || 0) + prevBidAmount;
+        await supabase.from("members").update({points: refundedPoints}).eq("id", prevMember.id);
+        setMembers(prev=>prev.map(m=>m.id===prevMember.id ? {...m, points: refundedPoints} : m));
       }
-
-      // ── 4) Save bid to auction_items — real-time fires to all users ─────
-      const { error: bidErr } = await supabase.from("auction_items").update({
-        currentBid: amount,
-        highBidder: myName,
-        bids: JSON.stringify(updatedBids),
-      }).eq("id", bidModal.id);
-      if(bidErr) throw new Error(`Bid save failed: ${bidErr.message}`);
-
-      showToast(`🏺 Bid of ${amount.toLocaleString()} pts placed on ${bidModal.name}!`);
-
-    } catch(err) {
-      console.error("Bid error:", err);
-      // Rollback optimistic update
-      setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points:myPoints} : m));
-      setAuctionItems(prev=>prev.map(item=>
-        item.id!==bidModal.id ? item : bidModal
-      ));
-      showToast(`❌ ${err.message}`,"error");
     }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // Update auction item in Supabase — realtime subscription refreshes all users
+    const { error } = await supabase.from("auction_items").update({
+      currentBid: amount,
+      highBidder: myName,
+      bids: JSON.stringify(updatedBids),
+    }).eq("id", bidModal.id);
+    if(error) {
+      showToast(`❌ Bid failed: ${error.message}`, "error");
+      // Rollback points on failure
+      await supabase.from("members").update({points: myPoints}).eq("id", myMember.id);
+      setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points: myPoints} : m));
+      if(currentUser.id === myMember.id) setCurrentUser(prev=>({...prev, points: myPoints}));
+      return;
+    }
+    // Optimistic local update so the bidder sees it instantly
+    setAuctionItems(prev=>prev.map(item=>{
+      if(item.id!==bidModal.id) return item;
+      return {...item, currentBid:amount, highBidder:myName, bids:updatedBids};
+    }));
+    setBidModal(null); setBidAmount("");
+    showToast(`🏺 Bid of ${amount.toLocaleString()} pts placed on ${bidModal.name}!`);
   };
 
   const handleAnnounceWinner = async(item)=>{
+    if(!item.highBidder) { showToast("❌ No bids placed yet","error"); return; }
+    // Check for duplicate — prevent announcing same item twice
+    const alreadyWon = winners.some(w=>w.itemName===item.name&&w.winner===item.highBidder);
+    if(alreadyWon) { showToast("⚠️ Winner already announced for this item","warn"); return; }
     const w = {
-      id: String(Date.now()),
+      // No client-generated id — let Supabase auto-generate uuid
       itemName: item.name, winner: item.highBidder, points: item.currentBid,
       date: new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}),
       claimed: false, rarity: item.rarity, image: item.image,
       created_at: new Date().toISOString(),
     };
     try {
-      await supabase.from("winners").insert([w]);
-      await supabase.from("auction_items").update({locked:true,winner:item.highBidder}).eq("id",item.id);
+      const { error: wErr } = await supabase.from("winners").insert([w]);
+      if(wErr) throw wErr;
+      const { error: lErr } = await supabase.from("auction_items")
+        .update({locked:true, winner:item.highBidder})
+        .eq("id", item.id);
+      if(lErr) throw lErr;
       await loadAuctionItems();
-      // Real-time sub handles loadWinners()
-    } catch {
-      setWinners(prev=>[...prev,w]);
-      setAuctionItems(prev=>prev.map(i=>i.id===item.id?{...i,locked:true,winner:item.highBidder}:i));
+      await loadWinners();
+    } catch(e) {
+      console.error("Announce winner error:", e);
+      showToast(`❌ Failed: ${e.message}`,"error");
+      return;
     }
     if(discordConnected) showToast("📢 Discord notified: Winner announced!","info");
     showToast(`🏆 ${item.highBidder} won ${item.name}!`);
@@ -1974,7 +1965,12 @@ export default function App() {
                       <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:rs.color}} />
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
                         <div style={{display:"flex",alignItems:"center",gap:11}}>
-                          <div style={{width:48,height:48,borderRadius:12,background:rs.bg,border:`1px solid ${rs.color}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>{w.image}</div>
+                          <div style={{width:48,height:48,borderRadius:12,background:rs.bg,border:`1px solid ${rs.color}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,overflow:"hidden"}}>
+                            {w.image&&(w.image.startsWith("http")||w.image.startsWith("data"))
+                              ? <img src={w.image} alt={w.itemName} style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:12}} />
+                              : <span>{w.image||"🏆"}</span>
+                            }
+                          </div>
                           <div>
                             <div style={{fontSize:14,fontWeight:700,color:"#e2e8f0"}}>{w.itemName}</div>
                             <span style={{fontSize:10.5,color:rs.color,fontWeight:700}}>{w.rarity}</span>
