@@ -1416,6 +1416,9 @@ export default function App() {
               ))}
             </div>
 
+            {/* ── BOSS SCHEDULE (dashboard) ── */}
+            <BossSchedulePanel />
+
             <div style={{background:"linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.07)",borderRadius:20,overflow:"hidden"}}>
               <div style={{padding:"16px 22px 12px",borderBottom:"1px solid rgba(255,255,255,0.05)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
@@ -2660,6 +2663,133 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ── Boss Schedule Panel (UTC+8, real-time clock) ─────────────────────────────
+const BOSS_SCHEDULE = [
+  { map:"Canyon of the World Tree Depth", ch:"Ch. 1", boss:"Twilight Overlord Rogvalt", days:[0,3,6], time:"21:00" },
+  { map:"Vale of Ragnarok",               ch:"Ch. 1", boss:"Nargrim",                   days:[1,6],   time:"21:05" },
+  { map:"Crossroads of Ragnarok",         ch:"Ch. 1", boss:"Faded Oath Vargreif",       days:[3,5],   time:"21:10" },
+  { map:"(Inter-Server) Folkvang 5F",     ch:"Ch. 1", boss:"Twilight Disaster Nirva",   days:[0,1,5], time:"21:15" },
+  { map:"Forgotten Holy Temple",          ch:"Ch. 1", boss:"Phantom Sovereign Skoll",   days:[0,2,4,6],time:"21:20"},
+  { map:"Myrkrheim",                      ch:"Ch. 1", boss:"Warlord Hrungner",           days:[2,5],   time:"21:30" },
+  { map:"King's Tomb",                    ch:"Ch. 1", boss:"Gravebinder Ulfgar",         days:[1,3,6], time:"21:45" },
+  { map:"Lindwurm Cave",                  ch:"Ch. 1", boss:"Lindwurm the Ancient",       days:[0,4],   time:"22:00" },
+  { map:"Hilder's Labyrinth",             ch:"Ch. 1", boss:"Chaos Herald Draven",        days:[2,5,6], time:"22:15" },
+  { map:"Twisted Plateau",                ch:"Ch. 1", boss:"Stormbringer Valdris",        days:[1,3,4], time:"22:30" },
+];
+const DAY_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+function BossSchedulePanel() {
+  const [collapsed, setCollapsed] = useState(false);
+  const [nowUTC8, setNowUTC8] = useState(()=>new Date(Date.now() + 8*3600000));
+
+  useEffect(()=>{
+    const t = setInterval(()=>setNowUTC8(new Date(Date.now() + 8*3600000)), 1000);
+    return ()=>clearInterval(t);
+  },[]);
+
+  const todayUTC8   = nowUTC8.getUTCDay(); // 0=Sun
+  const curH        = nowUTC8.getUTCHours();
+  const curM        = nowUTC8.getUTCMinutes();
+  const curS        = nowUTC8.getUTCSeconds();
+  const nowMins     = curH * 60 + curM;
+
+  // Find next upcoming boss today or next days
+  const getCountdown = (boss)=>{
+    const [bh, bm] = boss.time.split(":").map(Number);
+    const bossMins = bh * 60 + bm;
+    // Check if boss spawns today and hasn't passed yet
+    if(boss.days.includes(todayUTC8) && nowMins < bossMins) {
+      const diff = (bossMins - nowMins) * 60 - curS;
+      const h = Math.floor(diff/3600), m = Math.floor((diff%3600)/60), s = diff%60;
+      return { label:`${h}h ${m}m ${s}s`, soon: diff < 1800, active: diff < 300 };
+    }
+    return null;
+  };
+
+  const todayBosses = BOSS_SCHEDULE.filter(b=>b.days.includes(todayUTC8));
+  const otherBosses = BOSS_SCHEDULE.filter(b=>!b.days.includes(todayUTC8));
+
+  const clockStr = `${String(curH).padStart(2,"0")}:${String(curM).padStart(2,"0")}:${String(curS).padStart(2,"0")}`;
+
+  return (
+    <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(251,191,36,0.18)",borderRadius:18,marginBottom:22,overflow:"hidden",transition:"all 0.3s"}}>
+      {/* Header — clickable to collapse */}
+      <div onClick={()=>setCollapsed(p=>!p)}
+        style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",borderBottom:collapsed?"none":"1px solid rgba(251,191,36,0.1)",cursor:"pointer",background:"rgba(251,191,36,0.04)",userSelect:"none"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <span style={{fontSize:18}}>📅</span>
+          <div>
+            <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:"#fbbf24",letterSpacing:"0.06em"}}>BOSS SCHEDULE · UTC+8</div>
+            <div style={{fontSize:10.5,color:"#3d5070",marginTop:1}}>{todayBosses.length} bosses today · Respawn resets daily 12:00 AM UTC+8</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:14}}>
+          <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:15,fontWeight:700,color:"#fbbf24",letterSpacing:"0.08em",background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.25)",padding:"3px 10px",borderRadius:7}}>{clockStr}</span>
+          <span style={{color:"#3d5070",fontSize:14,transition:"transform 0.25s",display:"inline-block",transform:collapsed?"rotate(0deg)":"rotate(180deg)"}}>▾</span>
+        </div>
+      </div>
+
+      {/* Body */}
+      {!collapsed&&(
+        <div style={{padding:"14px 18px 18px"}}>
+          {/* Today's bosses */}
+          <div style={{fontSize:10,fontWeight:700,color:"#fbbf24",letterSpacing:"0.1em",marginBottom:8,textTransform:"uppercase"}}>
+            {DAY_LABELS[todayUTC8]} — Today
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:16}}>
+            {todayBosses.length === 0 && (
+              <div style={{color:"#3d5070",fontSize:12,padding:"10px 0"}}>No bosses scheduled today.</div>
+            )}
+            {todayBosses.map((b,i)=>{
+              const cd = getCountdown(b);
+              const [bh, bm] = b.time.split(":").map(Number);
+              const passed = nowMins >= bh*60+bm;
+              return (
+                <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:cd?.active?"rgba(251,191,36,0.1)":cd?.soon?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.025)",border:`1px solid ${cd?.active?"rgba(251,191,36,0.4)":cd?.soon?"rgba(251,191,36,0.2)":"rgba(255,255,255,0.06)"}`,borderRadius:10,padding:"9px 13px",transition:"all 0.3s"}}>
+                  <div style={{width:6,height:6,borderRadius:"50%",background:passed?"#475569":cd?.active?"#fbbf24":"#34d399",boxShadow:cd?.active?"0 0 8px #fbbf24":passed?"none":"0 0 6px #34d399",flexShrink:0}} />
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:700,color:"#e2e8f0",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.boss}</div>
+                    <div style={{fontSize:10,color:"#3d5070",marginTop:1}}>{b.map} · {b.ch}</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:13,fontWeight:700,color:"#fbbf24"}}>{b.time}</div>
+                    {cd ? (
+                      <div style={{fontSize:9.5,color:cd.active?"#fbbf24":cd.soon?"#fb923c":"#34d399",fontWeight:700}}>{cd.active?"⚠️ SOON ":""}{cd.label}</div>
+                    ) : (
+                      <div style={{fontSize:9.5,color:passed?"#475569":"#3d5070"}}>{passed?"✓ Done":""}</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Other days — compact */}
+          <div style={{fontSize:10,fontWeight:700,color:"#3d5070",letterSpacing:"0.1em",marginBottom:8,textTransform:"uppercase"}}>Other Days</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:6}}>
+            {otherBosses.map((b,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,padding:"7px 11px"}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.boss}</div>
+                  <div style={{fontSize:9.5,color:"#3d5070",marginTop:1}}>{b.map}</div>
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:12,color:"#64748b"}}>{b.time}</div>
+                  <div style={{fontSize:9,color:"#2d3a52"}}>{b.days.map(d=>DAY_LABELS[d]).join(" · ")}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{marginTop:12,padding:"8px 12px",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:8,fontSize:10.5,color:"#3d5070",lineHeight:1.6}}>
+            ⚠️ Bosses appear <strong style={{color:"#94a3b8"}}>once per day</strong> — timer cannot be changed after boss appears. Only conquerors may change respawn time (once/week, resets Tue 5AM UTC+8). Cannot be set between <strong style={{color:"#94a3b8"}}>10:30PM – 11:59PM</strong>.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
