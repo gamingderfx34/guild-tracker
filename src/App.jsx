@@ -375,21 +375,48 @@ export default function App() {
 
   // ── Supabase real-time subscriptions ─────────────────────────────────────
   useEffect(()=>{
-    // Auction items real-time
+    // Auction items — use payload directly for zero-delay updates on bids
     const auctionSub = supabase
       .channel("auction_items_rt")
-      .on("postgres_changes",{event:"*",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); })
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"auction_items"},(payload)=>{
+        // New item listed — reload to get full formatted item
+        loadAuctionItems();
+      })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"auction_items"},(payload)=>{
+        // Bid placed or item edited — apply immediately from payload, no DB round-trip
+        const u = payload.new;
+        setAuctionItems(prev=>prev.map(item=>{
+          if(String(item.id) !== String(u.id)) return item;
+          return {
+            ...item,
+            currentBid:  u.currentBid  ?? item.currentBid,
+            highBidder:  u.highBidder  ?? item.highBidder,
+            bids:        typeof u.bids==="string" ? JSON.parse(u.bids||"[]") : (u.bids||item.bids),
+            locked:      u.locked      ?? item.locked,
+            winner:      u.winner      ?? item.winner,
+            claimed:     u.claimed     ?? item.claimed,
+            image:       u.image       || item.image,
+          };
+        }));
+      })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"auction_items"},(payload)=>{
+        setAuctionItems(prev=>prev.filter(item=>String(item.id)!==String(payload.old.id)));
+      })
       .subscribe();
 
-    // Members real-time — so new registrations & role/points changes appear everywhere instantly
+    // Members — use payload for instant points update on all screens
     const membersSub = supabase
       .channel("members_rt")
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"members"},()=>{ loadMembers(); })
-      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"members"},()=>{ loadMembers(); })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"members"},(payload)=>{
+        // Update points and fields instantly from payload — no DB round-trip
+        const u = payload.new;
+        setMembers(prev=>prev.map(m=>String(m.id)===String(u.id) ? {...m,...u} : m));
+      })
       .on("postgres_changes",{event:"DELETE",schema:"public",table:"members"},()=>{ loadMembers(); })
       .subscribe();
 
-    // Events real-time — so all users see new events, attendance changes instantly
+    // Events real-time
     const eventsSub = supabase
       .channel("events_rt")
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"events"},()=>{ loadEvents(); })
@@ -1034,59 +1061,68 @@ export default function App() {
     const amount = parseInt(bidAmount);
     const myMember = members.find(m=>m.name===currentUser?.name);
     const myPoints = myMember?.points || 0;
-    // Only Leader, Elder, Member can bid. Recruits must wait 7 days (game rule).
     const canBidRole = ["Leader","Elder","Member","Admin"].includes(currentUser?.role);
     if(!canBidRole) { showToast("❌ Recruits cannot bid — 7-day waiting period applies in-game","error"); return; }
     if(!bidModal||isNaN(amount)) { showToast("❌ Enter a valid amount","error"); return; }
     if(amount <= bidModal.currentBid && bidModal.currentBid > 0) { showToast(`❌ Bid must exceed ${bidModal.currentBid.toLocaleString()} pts`,"error"); return; }
     if(amount < bidModal.minBid) { showToast(`❌ Minimum bid is ${bidModal.minBid.toLocaleString()} pts`,"error"); return; }
     if(amount > myPoints) { showToast(`❌ Not enough points! You have ${myPoints.toLocaleString()} pts`,"error"); return; }
-    const myName = currentUser?.name||"Guest";
-    const newBid = {bidder:myName, amount, time:new Date().toLocaleTimeString()};
-    const updatedBids = [...(bidModal.bids||[]), newBid];
 
-    // ── Points: deduct from new bidder, refund previous high bidder ───────────
+    const myName        = currentUser?.name||"Guest";
     const prevHighBidder = bidModal.highBidder;
     const prevBidAmount  = bidModal.currentBid || 0;
+    const newBid         = {bidder:myName, amount, time:new Date().toLocaleTimeString()};
+    const updatedBids    = [...(bidModal.bids||[]), newBid];
 
-    // 1) Deduct points from the new bidder
-    const myUpdatedPoints = myPoints - amount;
-    await supabase.from("members").update({points: myUpdatedPoints}).eq("id", myMember.id);
-    setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points: myUpdatedPoints} : m));
-    if(currentUser.id === myMember.id) setCurrentUser(prev=>({...prev, points: myUpdatedPoints}));
-
-    // 2) Refund the previous high bidder (if someone was outbid)
-    if(prevHighBidder && prevHighBidder !== myName && prevBidAmount > 0) {
-      const prevMember = members.find(m=>m.name===prevHighBidder);
-      if(prevMember) {
-        const refundedPoints = (prevMember.points || 0) + prevBidAmount;
-        await supabase.from("members").update({points: refundedPoints}).eq("id", prevMember.id);
-        setMembers(prev=>prev.map(m=>m.id===prevMember.id ? {...m, points: refundedPoints} : m));
-      }
-    }
-    // ─────────────────────────────────────────────────────────────────────────
-
-    // Update auction item in Supabase — realtime subscription refreshes all users
-    const { error } = await supabase.from("auction_items").update({
-      currentBid: amount,
-      highBidder: myName,
-      bids: JSON.stringify(updatedBids),
-    }).eq("id", bidModal.id);
-    if(error) {
-      showToast(`❌ Bid failed: ${error.message}`, "error");
-      // Rollback points on failure
-      await supabase.from("members").update({points: myPoints}).eq("id", myMember.id);
-      setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points: myPoints} : m));
-      if(currentUser.id === myMember.id) setCurrentUser(prev=>({...prev, points: myPoints}));
-      return;
-    }
-    // Optimistic local update so the bidder sees it instantly
-    setAuctionItems(prev=>prev.map(item=>{
-      if(item.id!==bidModal.id) return item;
-      return {...item, currentBid:amount, highBidder:myName, bids:updatedBids};
-    }));
+    // ── Close modal immediately so UI feels instant ────────────────────────
     setBidModal(null); setBidAmount("");
-    showToast(`🏺 Bid of ${amount.toLocaleString()} pts placed on ${bidModal.name}!`);
+
+    // ── 1) Optimistic local update for the bidder ─────────────────────────
+    const myUpdatedPoints = myPoints - amount;
+    setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points:myUpdatedPoints} : m));
+    setAuctionItems(prev=>prev.map(item=>
+      item.id!==bidModal.id ? item : {...item, currentBid:amount, highBidder:myName, bids:updatedBids}
+    ));
+
+    try {
+      // ── 2) Deduct points from bidder in DB ──────────────────────────────
+      const { error: deductErr } = await supabase.from("members")
+        .update({points: myUpdatedPoints})
+        .eq("id", myMember.id);
+      if(deductErr) throw new Error(`Deduct failed: ${deductErr.message}`);
+
+      // ── 3) Refund previous high bidder — fetch FRESH points from DB ─────
+      //    (avoids stale local state giving wrong refund amount)
+      if(prevHighBidder && prevHighBidder !== myName && prevBidAmount > 0) {
+        const { data: prevFresh, error: fetchErr } = await supabase
+          .from("members").select("id,points").eq("name", prevHighBidder).single();
+        if(!fetchErr && prevFresh) {
+          const refunded = (prevFresh.points || 0) + prevBidAmount;
+          await supabase.from("members").update({points: refunded}).eq("id", prevFresh.id);
+          // Also update local state for the refunded person
+          setMembers(prev=>prev.map(m=>m.id===prevFresh.id ? {...m, points:refunded} : m));
+        }
+      }
+
+      // ── 4) Save bid to auction_items — real-time fires to all users ─────
+      const { error: bidErr } = await supabase.from("auction_items").update({
+        currentBid: amount,
+        highBidder: myName,
+        bids: JSON.stringify(updatedBids),
+      }).eq("id", bidModal.id);
+      if(bidErr) throw new Error(`Bid save failed: ${bidErr.message}`);
+
+      showToast(`🏺 Bid of ${amount.toLocaleString()} pts placed on ${bidModal.name}!`);
+
+    } catch(err) {
+      console.error("Bid error:", err);
+      // Rollback optimistic update
+      setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points:myPoints} : m));
+      setAuctionItems(prev=>prev.map(item=>
+        item.id!==bidModal.id ? item : bidModal
+      ));
+      showToast(`❌ ${err.message}`,"error");
+    }
   };
 
   const handleAnnounceWinner = async(item)=>{
