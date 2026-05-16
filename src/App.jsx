@@ -34,6 +34,18 @@ const DEFAULT_LIVE4 = [
   { id:"l4b", name:"Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#a78bfa", image:null, group:"live4" },
 ];
 
+// Myrkrheim bosses — same 4 bosses, different group
+const DEFAULT_MYRKRHEIM = [
+  { id:"m1a", name:"Cruel Outlaw Gand",  secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#f59e0b", image:null, group:"myrkrheim" },
+  { id:"m1b", name:"Cruel Outlaw Gand",  secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#f59e0b", image:null, group:"myrkrheim" },
+  { id:"m2a", name:"Gatekeeper Amot",    secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#60a5fa", image:null, group:"myrkrheim" },
+  { id:"m2b", name:"Gatekeeper Amot",    secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#60a5fa", image:null, group:"myrkrheim" },
+  { id:"m3a", name:"Destroyer Hawler",   secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#34d399", image:null, group:"myrkrheim" },
+  { id:"m3b", name:"Destroyer Hawler",   secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#34d399", image:null, group:"myrkrheim" },
+  { id:"m4a", name:"Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#a78bfa", image:null, group:"myrkrheim" },
+  { id:"m4b", name:"Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#a78bfa", image:null, group:"myrkrheim" },
+];
+
 // FOLKVANG floors: 1F-5F, Normal + Interserver
 const FOLKVANG_FLOORS = ["1F","2F","3F","4F","5F"];
 function mkFolkvang(type, color) {
@@ -200,6 +212,7 @@ export default function App() {
   const [uploadMsg, setUploadMsg]     = useState("");
   const [members, setMembers]         = useState([]);
   const [bosses, setBosses]           = useState(()=>lsGet("rampageBosses", DEFAULT_BOSSES));
+  const [myrkrheimBosses, setMyrkrheimBosses]       = useState(()=>lsGet("rampageMyrkrheim", DEFAULT_MYRKRHEIM));
   const [folkvangNormal, setFolkvangNormal]         = useState(()=>lsGet("rampageFolkvangN", DEFAULT_FOLKVANG_NORMAL));
   const [folkvangInterserver, setFolkvangInterserver] = useState(()=>lsGet("rampageFolkvangI", DEFAULT_FOLKVANG_INTERSERVER));
   const [canyonBosses, setCanyonBosses]             = useState(()=>lsGet("rampageCanyon", DEFAULT_CANYON));
@@ -250,6 +263,7 @@ export default function App() {
   // ── Persist to localStorage ──────────────────────────────────────────────
   useEffect(()=>{ lsSet("rampageActiveNav", activeNav); }, [activeNav]);
   useEffect(()=>{ lsSet("rampageBosses", bosses); }, [bosses]);
+  useEffect(()=>{ lsSet("rampageMyrkrheim", myrkrheimBosses); }, [myrkrheimBosses]);
   useEffect(()=>{ lsSet("rampageFolkvangN", folkvangNormal); }, [folkvangNormal]);
   useEffect(()=>{ lsSet("rampageFolkvangI", folkvangInterserver); }, [folkvangInterserver]);
   useEffect(()=>{ lsSet("rampageCanyon", canyonBosses); }, [canyonBosses]);
@@ -277,6 +291,7 @@ export default function App() {
         return {...b, secs:0, elapsed:(b.elapsed||0)+1};
       };
       setBosses(prev=>prev.map(tickBoss));
+      setMyrkrheimBosses(prev=>prev.map(tickBoss));
       setFolkvangNormal(prev=>prev.map(tickBoss));
       setFolkvangInterserver(prev=>prev.map(tickBoss));
       setCanyonBosses(prev=>prev.map(tickBoss));
@@ -525,6 +540,7 @@ export default function App() {
 
   // ── Boss group setter helper ──────────────────────────────────────────────
   const getSetterByGroup = (group) => {
+    if(group==="myrkrheim") return setMyrkrheimBosses;
     if(group==="folkvang_normal") return setFolkvangNormal;
     if(group==="folkvang_interserver") return setFolkvangInterserver;
     if(group==="canyon") return setCanyonBosses;
@@ -1186,9 +1202,27 @@ export default function App() {
                 </div>
               </div>
 
-              {/* ── LIVE 4 BOSSES ── */}
+              {/* ── MYRKRHEIM BOSSES ── */}
               <BossGroupPanel
-                title="⚔️ LIVE WORLD BOSSES"
+                title="🏰 MYRKRHEIM BOSS"
+                subtitle="CH 1 & CH 2 — Respawn 30–90 min (elapsed timer when alive)"
+                color="#818cf8"
+                bosses={myrkrheimBosses}
+                groupKey="myrkrheim"
+                canManage={canManage}
+                killFlash={killFlash}
+                onKill={(id)=>handleMarkKilledGroup(id,"myrkrheim")}
+                onReset={(id)=>handleResetToZero(id,"myrkrheim")}
+                onSetTimer={(id)=>{setBossTimerModal({id,group:"myrkrheim"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
+                onImage={(id)=>{setBossImageModal({id,group:"myrkrheim"});bossImgRef.current?.click();}}
+                onAddChannel={(bossName,color)=>handleAddChannel("myrkrheim",bossName,color)}
+                onRemoveChannel={(id)=>handleRemoveChannel(id,"myrkrheim")}
+                showRespawnEdit={false}
+              />
+
+              {/* ── KINGSTOMB 1F BOSSES ── */}
+              <BossGroupPanel
+                title="⚰️ KINGSTOMB 1F BOSS"
                 subtitle="CH 1 & CH 2 — Respawn 30–90 min (elapsed timer when alive)"
                 color="#f59e0b"
                 bosses={bosses}
