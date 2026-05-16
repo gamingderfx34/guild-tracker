@@ -115,10 +115,10 @@ const INIT_AUCTION_ITEMS = [
 // ── Event types with default points ─────────────────────────────────────────
 const EVENT_TYPES = [
   { id:"sindri",    label:"Sindri Battle",    icon:"⚔️",  defaultPoints:10, color:"#f59e0b" },
-  { id:"server",    label:"Server Battle",    icon:"🌐",  defaultPoints:5,  color:"#60a5fa" },
-  { id:"fieldboss", label:"Field Boss",       icon:"👹",  defaultPoints:5,  color:"#f87171" },
-  { id:"sanctuary", label:"Guild Sanctuary",  icon:"🏛️",  defaultPoints:5,  color:"#34d399" },
-  { id:"ymir",      label:"Ymir Cup",         icon:"🏆",  defaultPoints:5,  color:"#a78bfa" },
+  { id:"server",    label:"Server Battle",    icon:"🌐",  defaultPoints:3,  color:"#60a5fa" },
+  { id:"fieldboss", label:"Field Boss",       icon:"👹",  defaultPoints:1,  color:"#f87171" },
+  { id:"sanctuary", label:"Guild Sanctuary",  icon:"🏛️",  defaultPoints:3,  color:"#34d399" },
+  { id:"ymir",      label:"Ymir Cup",         icon:"🏆",  defaultPoints:0,  color:"#a78bfa", adminOnly:true },
 ];
 
 // ── Field Boss schedule (from game) ─────────────────────────────────────────
@@ -277,6 +277,13 @@ export default function App() {
     EVENT_TYPES.forEach(et=>{ merged[et.id] = saved[et.id] ?? et.defaultPoints; });
     return merged;
   });
+  // Attendance code security system — admin generates a code per event, members must enter it
+  const [eventAttCodes, setEventAttCodes] = useState(()=>lsGet("rampageAttCodes",{})); // {eventId: code}
+  const [showAttCodeModal, setShowAttCodeModal] = useState(null); // eventId for admin generating code
+  const [attCodeInput, setAttCodeInput] = useState(""); // member enters code
+  const [showMemberAttModal, setShowMemberAttModal] = useState(null); // {eventId, event}
+  const [generatedCode, setGeneratedCode] = useState(""); // shown to admin after generation
+  const [ymirPointsModal, setYmirPointsModal] = useState(null); // eventId for admin to assign Ymir points
 
   const fileRef    = useRef(null);
   const bossImgRef = useRef(null);
@@ -295,6 +302,7 @@ export default function App() {
   useEffect(()=>{ lsSet("rampageWinners", winners); }, [winners]);
   useEffect(()=>{ lsSet("rampageEvents", events); }, [events]);
   useEffect(()=>{ lsSet("rampageEventPoints", eventPoints); }, [eventPoints]);
+  useEffect(()=>{ lsSet("rampageAttCodes", eventAttCodes); }, [eventAttCodes]);
 
   // ── Sync boss timer with real time on load ────────────────────────────────
   useEffect(()=>{
@@ -791,6 +799,35 @@ export default function App() {
     showToast("🗑️ Event deleted","warn");
   };
 
+  // ── Attendance Code Security ───────────────────────────────────────────────
+  const generateAttCode = (eventId)=>{
+    // Generate a 6-char alphanumeric code
+    const code = Math.random().toString(36).substring(2,8).toUpperCase();
+    setEventAttCodes(prev=>({...prev,[eventId]:{ code, expiresAt: Date.now() + 10*60*1000, usedBy:[] }}));
+    setGeneratedCode(code);
+    showToast(`🔑 Code generated: ${code}`)
+    return code;
+  };
+
+  const handleMemberSelfAttendance = async(eventId, code)=>{
+    const stored = eventAttCodes[eventId];
+    if(!stored) { showToast("❌ No active code for this event","error"); return false; }
+    if(Date.now() > stored.expiresAt) { showToast("❌ Code expired — ask admin for new code","error"); return false; }
+    if(stored.code.toUpperCase() !== code.toUpperCase().trim()) { showToast("❌ Wrong code","error"); return false; }
+    if(stored.usedBy?.includes(currentUser?.name)) { showToast("⚠️ You already checked in!","warn"); return false; }
+    // Mark self as present
+    const myMember = members.find(m=>m.name===currentUser?.name);
+    if(!myMember) { showToast("❌ Could not find your member profile","error"); return false; }
+    await handleMarkEventAttendance(eventId, myMember.id, true);
+    // Record usage
+    setEventAttCodes(prev=>({
+      ...prev,[eventId]:{...stored, usedBy:[...(stored.usedBy||[]), currentUser?.name]}
+    }));
+    showToast("✅ Attendance recorded!");
+    setShowMemberAttModal(null); setAttCodeInput("");
+    return true;
+  };
+
   // ── Auction image upload to Supabase storage ──────────────────────────────
   const handleAuctionImageUpload = async(e)=>{
     const file = e.target.files?.[0]; if(!file) return;
@@ -875,8 +912,9 @@ export default function App() {
     const amount = parseInt(bidAmount);
     const myMember = members.find(m=>m.name===currentUser?.name);
     const myPoints = myMember?.points || 0;
-    // Recruits cannot bid
-    if(currentUser?.role==="Recruit") { showToast("❌ Recruits cannot bid — wait for promotion","error"); return; }
+    // Only Leader, Elder, Member can bid. Recruits must wait 7 days (game rule).
+    const canBidRole = ["Leader","Elder","Member","Admin"].includes(currentUser?.role);
+    if(!canBidRole) { showToast("❌ Recruits cannot bid — 7-day waiting period applies in-game","error"); return; }
     if(!bidModal||isNaN(amount)) { showToast("❌ Enter a valid amount","error"); return; }
     if(amount <= bidModal.currentBid && bidModal.currentBid > 0) { showToast(`❌ Bid must exceed ${bidModal.currentBid.toLocaleString()} pts`,"error"); return; }
     if(amount < bidModal.minBid) { showToast(`❌ Minimum bid is ${bidModal.minBid.toLocaleString()} pts`,"error"); return; }
@@ -1383,7 +1421,7 @@ export default function App() {
                 <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
                   {EVENT_TYPES.map(et=>(
                     <div key={et.id} style={{background:`rgba(0,0,0,0.3)`,border:`1px solid ${et.color}40`,borderRadius:10,padding:"7px 14px",fontSize:12,color:et.color,fontWeight:700,display:"flex",alignItems:"center",gap:6}}>
-                      {et.icon} {et.label} <span style={{opacity:0.6,fontWeight:400}}>+{eventPoints[et.id]??et.defaultPoints}pts</span>
+                      {et.icon} {et.label} <span style={{opacity:0.6,fontWeight:400}}>{et.adminOnly?"Admin assigns":`+${eventPoints[et.id]??et.defaultPoints}pts`}</span>
                     </div>
                   ))}
                 </div>
@@ -1439,11 +1477,22 @@ export default function App() {
                                 style={{background:isMarking?"rgba(99,102,241,0.2)":"rgba(255,255,255,0.06)",border:`1px solid ${isMarking?"rgba(99,102,241,0.4)":"rgba(255,255,255,0.1)"}`,color:isMarking?"#a5b4fc":"#64748b",padding:"8px 14px",fontSize:12}}>
                                 {isMarking?"✅ Done":"📋 Mark"}
                               </button>
+                              <button className="btn" onClick={()=>{setShowAttCodeModal(ev.id);setGeneratedCode("");}}
+                                style={{background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.3)",color:"#fbbf24",padding:"8px 12px",fontSize:12}}
+                                title="Generate attendance verification code">
+                                🔑
+                              </button>
                               <button className="btn" onClick={()=>handleDeleteEvent(ev.id)}
                                 style={{background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.2)",color:"#f87171",padding:"8px 10px",fontSize:12}}>
                                 🗑️
                               </button>
                             </div>
+                          )}
+                          {!canManage&&(
+                            <button className="btn" onClick={()=>setShowMemberAttModal({eventId:ev.id,event:ev})}
+                              style={{background:ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"rgba(52,211,153,0.12)":"rgba(99,102,241,0.15)",border:`1px solid ${ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"rgba(52,211,153,0.35)":"rgba(99,102,241,0.35)"}`,color:ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"#34d399":"#a5b4fc",padding:"8px 14px",fontSize:12,fontWeight:700}}>
+                              {ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"✅ Checked In":"📲 Check In"}
+                            </button>
                           )}
                         </div>
                       </div>
@@ -1565,7 +1614,7 @@ export default function App() {
                     <div style={{fontSize:13,fontWeight:700,color:"#60a5fa"}}>Points-Based Bidding</div>
                     <div style={{fontSize:11.5,color:"#4a6a8a",marginTop:1}}>
                       Balance: <strong style={{color:"#60a5fa"}}>{myPoints.toLocaleString()} pts</strong>
-                      {currentUser?.role==="Recruit"&&<span style={{color:"#f87171",marginLeft:10}}>⚠️ Recruits cannot bid</span>}
+                      {currentUser?.role==="Recruit"&&<span style={{color:"#f87171",marginLeft:10}}>⚠️ Recruits cannot bid (7-day game rule)</span>}
                     </div>
                   </div>
                 </div>
@@ -1615,7 +1664,8 @@ export default function App() {
                   const myBid=item.bids?.find(b=>b.bidder===currentUser?.name);
                   const amWinning=item.highBidder===currentUser?.name;
                   const timeLeft=(item.endTime||0)-now;
-                  const canBid = myPoints >= item.minBid && !item.locked && currentUser?.role!=="Recruit" && !item.locked && timeLeft>0;
+                  const canBidRole = ["Leader","Elder","Member","Admin"].includes(currentUser?.role);
+                  const canBid = myPoints >= item.minBid && !item.locked && canBidRole && timeLeft>0;
                   const isImg = item.image && (item.image.startsWith("http")||item.image.startsWith("data"));
                   return(
                     <div key={item.id} className={`auction-card${item.locked?" locked":""}`}
@@ -1683,7 +1733,7 @@ export default function App() {
                       <div style={{display:"flex",gap:9,position:"relative",zIndex:1,flexWrap:"wrap"}}>
                         {!item.locked&&timeLeft>0&&<button className="btn" onClick={()=>{setBidModal(item);setBidAmount("");}} disabled={!canBid}
                           style={{flex:1,minWidth:100,background:canBid?`linear-gradient(135deg,${rs.color}30,${rs.color}15)`:"rgba(255,255,255,0.04)",border:`1px solid ${canBid?rs.color+"50":"rgba(255,255,255,0.1)"}`,color:canBid?rs.color:"#3d5070",padding:"10px",fontSize:13,opacity:canBid?1:0.7}}>
-                          {currentUser?.role==="Recruit"?"🔒 No Bid":"🏺 Place Bid"}
+                          {currentUser?.role==="Recruit"?"🔒 7-Day Wait":"🏺 Place Bid"}
                         </button>}
                         {isAdmin&&!item.locked&&item.highBidder&&(
                           <button className="btn" onClick={()=>handleAnnounceWinner(item)}
@@ -1789,13 +1839,14 @@ export default function App() {
                 {EVENT_TYPES.map(et=>{
                   const pts = eventPoints[et.id] ?? et.defaultPoints;
                   return(
-                    <div key={et.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:10,padding:"10px 14px"}}>
+                    <div key={et.id} style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,background:"rgba(255,255,255,0.02)",border:`1px solid ${et.adminOnly?"rgba(167,139,250,0.2)":"rgba(255,255,255,0.05)"}`,borderRadius:10,padding:"10px 14px"}}>
                       <span style={{fontSize:18,flexShrink:0}}>{et.icon}</span>
                       <span style={{flex:1,fontSize:13,color:"#e2e8f0",fontWeight:600}}>{et.label}</span>
+                      {et.adminOnly&&<span style={{fontSize:9,color:"#a78bfa",background:"rgba(167,139,250,0.1)",border:"1px solid rgba(167,139,250,0.25)",borderRadius:4,padding:"2px 6px",fontWeight:700}}>ADMIN ASSIGNS</span>}
                       {isAdmin||isLeader ? (
                         <div style={{display:"flex",alignItems:"center",gap:6}}>
-                          <button onClick={()=>setEventPoints(p=>({...p,[et.id]:Math.max(0,(p[et.id]??et.defaultPoints)-1)}))}
-                            style={{width:28,height:28,borderRadius:7,background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.3)",color:"#f87171",cursor:"pointer",fontSize:16,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                          {!et.adminOnly&&<button onClick={()=>setEventPoints(p=>({...p,[et.id]:Math.max(0,(p[et.id]??et.defaultPoints)-1)}))}
+                            style={{width:28,height:28,borderRadius:7,background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.3)",color:"#f87171",cursor:"pointer",fontSize:16,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>}
                           <input
                             type="number" min="0" max="999"
                             value={pts}
@@ -1803,15 +1854,15 @@ export default function App() {
                               const v = parseInt(e.target.value);
                               if(!isNaN(v)&&v>=0) setEventPoints(p=>({...p,[et.id]:v}));
                             }}
-                            style={{width:56,background:"rgba(255,255,255,0.07)",border:`1px solid ${et.color}50`,borderRadius:8,padding:"5px 6px",color:et.color,fontSize:15,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,textAlign:"center",outline:"none"}}
+                            style={{width:56,background:"rgba(255,255,255,0.07)",border:`1px solid ${et.color}50`,borderRadius:8,padding:"5px 6px",color:et.adminOnly?"#a78bfa":et.color,fontSize:15,fontFamily:"'Rajdhani',sans-serif",fontWeight:700,textAlign:"center",outline:"none"}}
                           />
-                          <button onClick={()=>setEventPoints(p=>({...p,[et.id]:(p[et.id]??et.defaultPoints)+1}))}
-                            style={{width:28,height:28,borderRadius:7,background:"rgba(52,211,153,0.15)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",cursor:"pointer",fontSize:16,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                          {!et.adminOnly&&<button onClick={()=>setEventPoints(p=>({...p,[et.id]:(p[et.id]??et.defaultPoints)+1}))}
+                            style={{width:28,height:28,borderRadius:7,background:"rgba(52,211,153,0.15)",border:"1px solid rgba(52,211,153,0.3)",color:"#34d399",cursor:"pointer",fontSize:16,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>}
                           <span style={{fontSize:10,color:"#3d5070",marginLeft:2}}>pts</span>
                         </div>
                       ) : (
-                        <div style={{background:`${et.color}18`,border:`1px solid ${et.color}40`,borderRadius:8,padding:"5px 14px",fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:et.color,minWidth:60,textAlign:"center"}}>
-                          +{pts}
+                        <div style={{background:`${et.color}18`,border:`1px solid ${et.color}40`,borderRadius:8,padding:"5px 14px",fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:et.adminOnly?"#a78bfa":et.color,minWidth:60,textAlign:"center"}}>
+                          {et.adminOnly?"—":`+${pts}`}
                         </div>
                       )}
                     </div>
@@ -1991,6 +2042,7 @@ export default function App() {
                   <button key={et.id} onClick={()=>setEventForm(p=>({...p,type:et.id,points:eventPoints[et.id]??et.defaultPoints,name:et.label}))}
                     style={{background:eventForm.type===et.id?`${et.color}20`:"rgba(255,255,255,0.04)",border:`1px solid ${eventForm.type===et.id?et.color+"60":"rgba(255,255,255,0.1)"}`,borderRadius:10,padding:"10px",cursor:"pointer",display:"flex",alignItems:"center",gap:8,color:eventForm.type===et.id?et.color:"#64748b",fontSize:12,fontWeight:700,fontFamily:"'Exo 2',sans-serif",transition:"all 0.15s"}}>
                     <span style={{fontSize:16}}>{et.icon}</span>{et.label}
+                    {et.adminOnly&&<span style={{fontSize:9,color:"#a78bfa",marginLeft:"auto"}}>ADMIN</span>}
                   </button>
                 ))}
               </div>
@@ -2007,7 +2059,9 @@ export default function App() {
                 <input className="dark-input" value={eventForm.date} onChange={e=>setEventForm(p=>({...p,date:e.target.value}))} />
               </div>
               <div>
-                <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Points Awarded</label>
+                <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>
+                  Points Awarded {EVENT_TYPES.find(et=>et.id===eventForm.type)?.adminOnly&&<span style={{color:"#a78bfa",fontSize:9}}>(Admin assigns)</span>}
+                </label>
                 <input className="dark-input" type="number" value={eventForm.points} onChange={e=>setEventForm(p=>({...p,points:e.target.value}))} />
               </div>
             </div>
@@ -2027,6 +2081,64 @@ export default function App() {
             <div style={{display:"flex",gap:11}}>
               <button className="btn" onClick={()=>setShowCreateEvent(false)} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"11px"}}>Cancel</button>
               <button className="btn" onClick={handleCreateEvent} style={{flex:2,background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"11px",boxShadow:"0 4px 22px rgba(99,102,241,0.35)"}}>Create Event</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin: Generate Attendance Code Modal */}
+      {showAttCodeModal&&(
+        <div onClick={()=>{setShowAttCodeModal(null);setGeneratedCode("");}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",backdropFilter:"blur(8px)",zIndex:250,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div className="modal-box" onClick={e=>e.stopPropagation()}
+            style={{background:"#0a0c18",border:"1px solid rgba(251,191,36,0.3)",borderRadius:22,padding:"30px 32px",width:400,boxShadow:"0 32px 100px rgba(0,0,0,0.9)"}}>
+            <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:22,fontWeight:700,color:"#fbbf24",marginBottom:8,letterSpacing:"0.04em"}}>🔑 Attendance Code</h3>
+            <p style={{color:"#3d5070",fontSize:12,marginBottom:20,lineHeight:1.7}}>Generate a one-time 6-character code. Share it verbally with guild members during the event. Code expires in <strong style={{color:"#fbbf24"}}>10 minutes</strong>. Members enter it to self-check-in — prevents fake attendance.</p>
+            {generatedCode?(
+              <div style={{textAlign:"center",marginBottom:22}}>
+                <div style={{background:"rgba(251,191,36,0.08)",border:"2px dashed rgba(251,191,36,0.4)",borderRadius:16,padding:"24px",marginBottom:12}}>
+                  <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:44,fontWeight:700,color:"#fbbf24",letterSpacing:"0.2em"}}>{generatedCode}</div>
+                  <div style={{fontSize:11,color:"#3d5070",marginTop:6}}>Share this code with guild members in-game or Discord</div>
+                </div>
+                <div style={{background:"rgba(52,211,153,0.08)",border:"1px solid rgba(52,211,153,0.2)",borderRadius:10,padding:"10px",fontSize:11.5,color:"#34d399"}}>
+                  ✅ Code is active · Expires in 10 min · Used by members who check in
+                </div>
+              </div>
+            ):(
+              <div style={{textAlign:"center",marginBottom:22}}>
+                <div style={{fontSize:50,marginBottom:12}}>🎲</div>
+                <div style={{fontSize:13,color:"#64748b"}}>Click Generate to create a secure attendance code</div>
+              </div>
+            )}
+            <div style={{display:"flex",gap:11}}>
+              <button className="btn" onClick={()=>{setShowAttCodeModal(null);setGeneratedCode("");}} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"11px"}}>Close</button>
+              <button className="btn" onClick={()=>generateAttCode(showAttCodeModal)} style={{flex:2,background:"linear-gradient(135deg,#d97706,#fbbf24)",color:"#000",padding:"11px",fontWeight:800,fontSize:14}}>
+                {generatedCode?"🔄 New Code":"🔑 Generate Code"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Member: Self Check-In Modal */}
+      {showMemberAttModal&&(
+        <div onClick={()=>{setShowMemberAttModal(null);setAttCodeInput("");}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",backdropFilter:"blur(8px)",zIndex:250,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div className="modal-box" onClick={e=>e.stopPropagation()}
+            style={{background:"#0a0c18",border:"1px solid rgba(99,102,241,0.3)",borderRadius:22,padding:"30px 32px",width:400,boxShadow:"0 32px 100px rgba(0,0,0,0.9)"}}>
+            <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:22,fontWeight:700,color:"#a5b4fc",marginBottom:6,letterSpacing:"0.04em"}}>📲 Event Check-In</h3>
+            <div style={{fontSize:13,fontWeight:700,color:"#e2e8f0",marginBottom:4}}>{showMemberAttModal.event?.name}</div>
+            <p style={{color:"#3d5070",fontSize:12,marginBottom:22,lineHeight:1.7}}>Enter the 6-character attendance code shared by the Leader or Elder during the event.</p>
+            <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.08em"}}>Attendance Code</label>
+            <input className="dark-input" placeholder="e.g. A3F9XQ" value={attCodeInput} onChange={e=>setAttCodeInput(e.target.value.toUpperCase())}
+              onKeyDown={e=>e.key==="Enter"&&handleMemberSelfAttendance(showMemberAttModal.eventId,attCodeInput)}
+              style={{textAlign:"center",fontFamily:"'Rajdhani',sans-serif",fontSize:28,fontWeight:700,letterSpacing:"0.2em",marginBottom:20}} maxLength={6} />
+            <div style={{background:"rgba(99,102,241,0.07)",border:"1px solid rgba(99,102,241,0.2)",borderRadius:10,padding:"10px 14px",marginBottom:20,fontSize:11,color:"#6366f1",lineHeight:1.6}}>
+              🛡️ This code is only valid during the event and expires in 10 minutes. Each code can only be used once per member.
+            </div>
+            <div style={{display:"flex",gap:11}}>
+              <button className="btn" onClick={()=>{setShowMemberAttModal(null);setAttCodeInput("");}} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"11px"}}>Cancel</button>
+              <button className="btn" onClick={()=>handleMemberSelfAttendance(showMemberAttModal.eventId,attCodeInput)} style={{flex:2,background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"11px",boxShadow:"0 4px 22px rgba(99,102,241,0.35)"}}>
+                ✅ Check In
+              </button>
             </div>
           </div>
         </div>
