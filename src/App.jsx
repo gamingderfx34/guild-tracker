@@ -34,16 +34,16 @@ const DEFAULT_LIVE4 = [
   { id:"l4b", name:"Lv.69 Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#a78bfa", image:null, group:"live4" },
 ];
 
-// Myrkrheim bosses — same 4 bosses, different group
+// Myrkrheim bosses — same 4 boss names as Kingstomb 1F per user spec
 const DEFAULT_MYRKRHEIM = [
-  { id:"m1a", name:"Lv.66 Tre Sol Invading Captain",          secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#f59e0b", image:null, group:"myrkrheim" },
-  { id:"m1b", name:"Lv.66 Tre Sol Invading Captain",          secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#f59e0b", image:null, group:"myrkrheim" },
-  { id:"m2a", name:"Lv.67 Elder Troll Invading Captain",      secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#60a5fa", image:null, group:"myrkrheim" },
-  { id:"m2b", name:"Lv.67 Elder Troll Invading Captain",      secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#60a5fa", image:null, group:"myrkrheim" },
-  { id:"m3a", name:"Lv.68 Villainous Jotunn Combat Captain",  secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#34d399", image:null, group:"myrkrheim" },
-  { id:"m3b", name:"Lv.68 Villainous Jotunn Combat Captain",  secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#34d399", image:null, group:"myrkrheim" },
-  { id:"m4a", name:"Lv.68 Ferocious Fire Jotunn Fight Captain",secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#f97316", image:null, group:"myrkrheim" },
-  { id:"m4b", name:"Lv.68 Ferocious Fire Jotunn Fight Captain",secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#f97316", image:null, group:"myrkrheim" },
+  { id:"m1a", name:"Lv.66 Cruel Outlaw Gand",  secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#f59e0b", image:null, group:"myrkrheim" },
+  { id:"m1b", name:"Lv.66 Cruel Outlaw Gand",  secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#f59e0b", image:null, group:"myrkrheim" },
+  { id:"m2a", name:"Lv.67 Gatekeeper Amot",    secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#60a5fa", image:null, group:"myrkrheim" },
+  { id:"m2b", name:"Lv.67 Gatekeeper Amot",    secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#60a5fa", image:null, group:"myrkrheim" },
+  { id:"m3a", name:"Lv.68 Destroyer Hawler",   secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#34d399", image:null, group:"myrkrheim" },
+  { id:"m3b", name:"Lv.68 Destroyer Hawler",   secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#34d399", image:null, group:"myrkrheim" },
+  { id:"m4a", name:"Lv.69 Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:1, color:"#a78bfa", image:null, group:"myrkrheim" },
+  { id:"m4b", name:"Lv.69 Assulter Laudd",     secs:0, elapsed:0, minR:30, maxR:90, channel:2, color:"#a78bfa", image:null, group:"myrkrheim" },
 ];
 
 // FOLKVANG floors: 1F-5F, Normal + Interserver
@@ -270,6 +270,12 @@ export default function App() {
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [bossScheduleCollapsed, setBossScheduleCollapsed] = useState(true);
 
+  // ── Boss alert sound system ──────────────────────────────────────────────
+  const [alertSound, setAlertSound] = useState(()=>lsGet("rampageAlertSound","bell"));
+  const [alertEnabled, setAlertEnabled] = useState(()=>lsGet("rampageAlertEnabled",true));
+  const alertedBossesRef = useRef(new Set());
+  const audioCtxRef = useRef(null);
+
   // ── Events & Attendance ──────────────────────────────────────────────────
   const [events, setEvents]           = useState([]);
   const [showCreateEvent, setShowCreateEvent] = useState(false);
@@ -305,6 +311,8 @@ export default function App() {
   useEffect(()=>{ lsSet("rampageHilders", hildersBosses); }, [hildersBosses]);
   useEffect(()=>{ lsSet("rampageEventPoints", eventPoints); }, [eventPoints]);
   useEffect(()=>{ lsSet("rampageAttCodes", eventAttCodes); }, [eventAttCodes]);
+  useEffect(()=>{ lsSet("rampageAlertSound", alertSound); }, [alertSound]);
+  useEffect(()=>{ lsSet("rampageAlertEnabled", alertEnabled); }, [alertEnabled]);
   // bgImage and maintenanceMode are now synced via Supabase settings table
 
   // ── Sync boss timer with real time on load ────────────────────────────────
@@ -315,28 +323,101 @@ export default function App() {
       if (elapsed > 0) setBosses(prev=>prev.map(b=>({...b, secs:Math.max(0, b.secs - elapsed)})));
     }
     lsSet("rampageBossTimestamp", Date.now());
+    // Load boss_timers from Supabase on mount to sync images + timers for all users
+    supabase.from("boss_timers").select("*").then(({data})=>{
+      if (!data) return;
+      data.forEach(row=>{
+        const setter = getSetterByGroupStatic(row.group);
+        if (setter) {
+          setter(prev=>prev.map(b=>b.id===row.boss_id
+            ? { ...b,
+                secs: row.secs ?? b.secs,
+                elapsed: row.elapsed ?? b.elapsed,
+                image: row.image ? row.image : b.image
+              }
+            : b
+          ));
+        }
+      });
+    });
   },[]);
+
+  // ── Play boss alert sound ─────────────────────────────────────────────────
+  const playBossAlert = useCallback((soundType) => {
+    try {
+      if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
+        audioCtxRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") ctx.resume();
+
+      const playTone = (freq, startTime, duration, gainVal, type="sine") => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, startTime);
+        gain.gain.setValueAtTime(0, startTime);
+        gain.gain.linearRampToValueAtTime(gainVal, startTime + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+        osc.start(startTime); osc.stop(startTime + duration);
+      };
+
+      const t = ctx.currentTime;
+      if (soundType === "bell") {
+        // Crystal bell — bright ding ding
+        playTone(1046, t, 1.2, 0.5, "sine");
+        playTone(1318, t + 0.05, 0.9, 0.3, "sine");
+        playTone(1046, t + 0.5, 1.0, 0.4, "sine");
+        playTone(1318, t + 0.55, 0.7, 0.25, "sine");
+      } else {
+        // War horn — deep dramatic blast
+        playTone(110, t, 0.8, 0.6, "sawtooth");
+        playTone(165, t, 0.7, 0.4, "square");
+        playTone(220, t + 0.4, 0.8, 0.5, "sawtooth");
+        playTone(330, t + 0.4, 0.6, 0.3, "square");
+        playTone(147, t + 0.9, 1.0, 0.6, "sawtooth");
+      }
+    } catch(e) { console.warn("Audio error:", e); }
+  }, []);
 
   // ── Update timestamp every second ────────────────────────────────────────
   useEffect(()=>{
     const t = setInterval(()=>{
       const tickBoss = b => {
         if(b.secs > 0) return {...b, secs:b.secs-1, elapsed:0};
-        // boss is alive - count elapsed seconds since it spawned
         return {...b, secs:0, elapsed:(b.elapsed||0)+1};
       };
-      setBosses(prev=>prev.map(tickBoss));
-      setMyrkrheimBosses(prev=>prev.map(tickBoss));
-      setFolkvangNormal(prev=>prev.map(tickBoss));
-      setFolkvangInterserver(prev=>prev.map(tickBoss));
-      setCanyonBosses(prev=>prev.map(tickBoss));
-      setLindwurmBosses(prev=>prev.map(tickBoss));
-      setHildersBosses(prev=>prev.map(tickBoss));
+      // Check for boss going LIVE (secs: 1 -> 0) and trigger alert
+      const checkAlert = (bossList) => {
+        if (!alertEnabled) return bossList.map(tickBoss);
+        return bossList.map(b => {
+          const wasCountingDown = b.secs === 1;
+          const updated = tickBoss(b);
+          if (wasCountingDown && updated.secs === 0 && !alertedBossesRef.current.has(b.id)) {
+            alertedBossesRef.current.add(b.id);
+            // Remove from alerted set after 5 min so re-alert works next respawn
+            setTimeout(()=>alertedBossesRef.current.delete(b.id), 300000);
+            playBossAlert(alertSound);
+          } else if (b.secs > 5) {
+            // Reset alert flag when boss is killed (timer restarted)
+            alertedBossesRef.current.delete(b.id);
+          }
+          return updated;
+        });
+      };
+      setBosses(prev=>checkAlert(prev));
+      setMyrkrheimBosses(prev=>checkAlert(prev));
+      setFolkvangNormal(prev=>checkAlert(prev));
+      setFolkvangInterserver(prev=>checkAlert(prev));
+      setCanyonBosses(prev=>checkAlert(prev));
+      setLindwurmBosses(prev=>checkAlert(prev));
+      setHildersBosses(prev=>checkAlert(prev));
       setNow(Date.now());
       lsSet("rampageBossTimestamp", Date.now());
     },1000);
     return ()=>clearInterval(t);
-  },[]);
+  },[alertEnabled, alertSound, playBossAlert]);
 
   // ── Restore session on refresh ────────────────────────────────────────────
   const [sessionRestored, setSessionRestored] = useState(false);
@@ -416,12 +497,30 @@ export default function App() {
       .on("postgres_changes",{event:"*",schema:"public",table:"settings"},()=>{ loadSettings(); })
       .subscribe();
 
+    // Boss timers real-time — so all users see timer updates instantly
+    const bossTimersSub = supabase
+      .channel("boss_timers_rt")
+      .on("postgres_changes",{event:"*",schema:"public",table:"boss_timers"},(payload)=>{
+        const row = payload.new;
+        if (!row) return;
+        const { boss_id, group, secs, elapsed, image } = row;
+        const setter = getSetterByGroupStatic(group);
+        if (setter) {
+          setter(prev=>prev.map(b=>b.id===boss_id
+            ? { ...b, secs: secs ?? b.secs, elapsed: elapsed ?? b.elapsed, image: image !== undefined ? image : b.image }
+            : b
+          ));
+        }
+      })
+      .subscribe();
+
     return ()=>{
       supabase.removeChannel(auctionSub);
       supabase.removeChannel(membersSub);
       supabase.removeChannel(eventsSub);
       supabase.removeChannel(winnersSub);
       supabase.removeChannel(settingsSub);
+      supabase.removeChannel(bossTimersSub);
     };
   },[]);
 
@@ -666,18 +765,38 @@ export default function App() {
     return setBosses;
   };
 
+  // Stable reference for use inside Supabase real-time callbacks
+  const getSetterByGroupStatic = (group) => {
+    if(group==="myrkrheim") return setMyrkrheimBosses;
+    if(group==="folkvang_normal") return setFolkvangNormal;
+    if(group==="folkvang_interserver") return setFolkvangInterserver;
+    if(group==="canyon") return setCanyonBosses;
+    if(group==="lindwurm") return setLindwurmBosses;
+    if(group==="hilders") return setHildersBosses;
+    return setBosses;
+  };
+
   // ── Boss actions ───────────────────────────────────────────────────────────
   const handleMarkKilledGroup = (id, group)=>{
     setKillFlash(id); setTimeout(()=>setKillFlash(null),700);
     const setter = getSetterByGroup(group);
-    setter(prev=>prev.map(b=>{
-      if(b.id!==id) return b;
-      // For live4 bosses use minR/maxR; for others use respawnSecs
-      const secs = b.respawnSecs != null
-        ? b.respawnSecs
-        : Math.floor((b.minR + Math.random()*(b.maxR-b.minR))*60);
-      return {...b, secs, elapsed:0};
-    }));
+    let newSecs = 0;
+    setter(prev=>{
+      const updated = prev.map(b=>{
+        if(b.id!==id) return b;
+        const secs = b.respawnSecs != null
+          ? b.respawnSecs
+          : Math.floor((b.minR + Math.random()*(b.maxR-b.minR))*60);
+        newSecs = secs;
+        return {...b, secs, elapsed:0};
+      });
+      // Sync to Supabase so all users see the update
+      const boss = updated.find(b=>b.id===id);
+      if(boss) {
+        supabase.from("boss_timers").upsert({boss_id:id, group, secs:boss.secs, elapsed:0, updated_at:new Date().toISOString()}, {onConflict:"boss_id"}).catch(()=>{});
+      }
+      return updated;
+    });
     if(discordConnected) showToast("📢 Discord notified: Boss killed!","info");
   };
 
@@ -686,6 +805,7 @@ export default function App() {
   const handleResetToZero = (id, group="live4")=>{
     setKillFlash(id); setTimeout(()=>setKillFlash(null),700);
     getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,secs:0,elapsed:0}:b));
+    supabase.from("boss_timers").upsert({boss_id:id, group, secs:0, elapsed:0, updated_at:new Date().toISOString()}, {onConflict:"boss_id"}).catch(()=>{});
   };
 
   const handleSetManual = ()=>{
@@ -701,6 +821,7 @@ export default function App() {
     const {id,group} = bossTimerModal;
     const totalSecs = (parseInt(timerHH)||0)*3600 + (parseInt(timerMM)||0)*60 + (parseInt(timerSS)||0);
     getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,secs:totalSecs,elapsed:0}:b));
+    supabase.from("boss_timers").upsert({boss_id:id, group, secs:totalSecs, elapsed:0, updated_at:new Date().toISOString()}, {onConflict:"boss_id"}).catch(()=>{});
     setBossTimerModal(null);
   };
 
@@ -762,6 +883,8 @@ export default function App() {
         // Add cache-bust timestamp so browser doesn't show stale image
         const freshUrl = `${publicUrl}?t=${Date.now()}`;
         getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:freshUrl}:b));
+        // Sync image to boss_timers so ALL users see the updated image
+        supabase.from("boss_timers").upsert({boss_id:id, group, image:freshUrl, updated_at:new Date().toISOString()}, {onConflict:"boss_id"}).catch(()=>{});
         setBossImageModal(null);
         showToast("🖼️ Boss image uploaded!");
       }
@@ -1536,6 +1659,37 @@ export default function App() {
                 <span>Boss timers <strong>persist across sessions</strong> — they continue counting down even after refresh. Elapsed time shown when boss is LIVE.</span>
               </div>
 
+              {/* ── Alert Sound Controls ── */}
+              <div style={{background:"rgba(251,191,36,0.07)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:12,padding:"12px 18px",marginBottom:18,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                <span style={{fontSize:16}}>🔔</span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#fbbf24",letterSpacing:"0.04em"}}>Boss Alert Sound</div>
+                  <div style={{fontSize:10.5,color:"#3d5070",marginTop:1}}>Plays for ALL users when a boss becomes LIVE</div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  {/* Enable toggle */}
+                  <button onClick={()=>setAlertEnabled(p=>!p)}
+                    style={{background:alertEnabled?"rgba(52,211,153,0.15)":"rgba(255,255,255,0.05)",border:`1px solid ${alertEnabled?"rgba(52,211,153,0.4)":"rgba(255,255,255,0.1)"}`,color:alertEnabled?"#34d399":"#3d5070",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:11.5,transition:"all 0.18s"}}>
+                    {alertEnabled?"🔔 ON":"🔕 OFF"}
+                  </button>
+                  {/* Sound selector */}
+                  <div style={{display:"flex",gap:6}}>
+                    {[{key:"bell",label:"🔔 Bell",desc:"Crystal ding"},{key:"horn",label:"📯 Horn",desc:"War horn"}].map(s=>(
+                      <button key={s.key}
+                        onClick={()=>{ setAlertSound(s.key); playBossAlert(s.key); }}
+                        style={{background:alertSound===s.key?"rgba(251,191,36,0.18)":"rgba(255,255,255,0.04)",border:`1px solid ${alertSound===s.key?"rgba(251,191,36,0.5)":"rgba(255,255,255,0.1)"}`,color:alertSound===s.key?"#fbbf24":"#3d5070",borderRadius:8,padding:"6px 13px",cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:11.5,transition:"all 0.18s",display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>
+                        <span>{s.label}</span>
+                        <span style={{fontSize:9,opacity:0.7,fontWeight:400}}>{s.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <button onClick={()=>playBossAlert(alertSound)}
+                    style={{background:"rgba(96,165,250,0.12)",border:"1px solid rgba(96,165,250,0.3)",color:"#60a5fa",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:11,transition:"all 0.18s"}}>
+                    ▶ Test
+                  </button>
+                </div>
+              </div>
+
               {/* ── FOLKVANG · VALHALLA DUNGEON ── */}
               <FolkvangDungeonCard
                 folkvangNormal={folkvangNormal}
@@ -1551,7 +1705,7 @@ export default function App() {
               {/* ── MYRKRHEIM BOSSES ── */}
               <BossGroupPanel
                 title="🏰 MYRKRHEIM BOSS"
-                subtitle="CH 1 & CH 2 — Respawn 30–90 min (elapsed timer when alive)"
+                subtitle="CH 1 & CH 2 — Same bosses as Kingstomb 1F · Respawn 30–90 min"
                 color="#818cf8"
                 bosses={myrkrheimBosses}
                 groupKey="myrkrheim"
@@ -2126,6 +2280,33 @@ export default function App() {
                     🔄 Reset to Defaults
                   </button>
                 )}
+              </div>
+
+              {/* Boss Alert Sound */}
+              <div style={{background:"rgba(251,191,36,0.05)",border:"1px solid rgba(251,191,36,0.18)",borderRadius:18,padding:"22px"}}>
+                <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#fbbf24",marginBottom:6,letterSpacing:"0.04em"}}>🔔 Boss Alert Sound</h3>
+                <p style={{color:"#3d5070",fontSize:11.5,marginBottom:16,lineHeight:1.6}}>Choose your alert sound — plays when any boss becomes LIVE. Saved per device. Both sounds available to all users.</p>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                  <span style={{fontSize:12.5,color:"#94a3b8",fontWeight:600}}>Alert:</span>
+                  <button onClick={()=>setAlertEnabled(p=>!p)}
+                    style={{background:alertEnabled?"rgba(52,211,153,0.15)":"rgba(255,255,255,0.05)",border:`1px solid ${alertEnabled?"rgba(52,211,153,0.4)":"rgba(255,255,255,0.1)"}`,color:alertEnabled?"#34d399":"#3d5070",borderRadius:8,padding:"7px 18px",cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:12,transition:"all 0.18s"}}>
+                    {alertEnabled?"🔔 Enabled":"🔕 Disabled"}
+                  </button>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+                  {[{key:"bell",label:"🔔 Crystal Bell",desc:"Bright, clear ding — classic alert"},{key:"horn",label:"📯 War Horn",desc:"Deep, dramatic blast — epic feel"}].map(s=>(
+                    <button key={s.key}
+                      onClick={()=>{ setAlertSound(s.key); playBossAlert(s.key); }}
+                      style={{background:alertSound===s.key?"rgba(251,191,36,0.15)":"rgba(255,255,255,0.04)",border:`2px solid ${alertSound===s.key?"rgba(251,191,36,0.6)":"rgba(255,255,255,0.1)"}`,color:alertSound===s.key?"#fbbf24":"#64748b",borderRadius:10,padding:"12px",cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:12,transition:"all 0.18s",textAlign:"left"}}>
+                      <div style={{fontSize:14,marginBottom:4}}>{s.label}{alertSound===s.key&&<span style={{marginLeft:8,fontSize:9,background:"rgba(251,191,36,0.2)",padding:"1px 6px",borderRadius:4,color:"#fbbf24"}}>SELECTED</span>}</div>
+                      <div style={{fontSize:10.5,fontWeight:400,color:"#3d5070"}}>{s.desc}</div>
+                    </button>
+                  ))}
+                </div>
+                <button onClick={()=>playBossAlert(alertSound)}
+                  style={{width:"100%",background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.3)",color:"#60a5fa",borderRadius:9,padding:"10px",cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:12,transition:"all 0.18s"}}>
+                  ▶ Preview Selected Sound
+                </button>
               </div>
 
               {/* Excel Export */}
