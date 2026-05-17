@@ -266,8 +266,8 @@ export default function App() {
   const [showWipeConfirm, setShowWipeConfirm] = useState(false);
   const [wipeLoading, setWipeLoading] = useState(false);
   const [bossImageModal, setBossImageModal] = useState(null);
-  const [bgImage, setBgImage]               = useState(()=>lsGet("rampageBgImage",""));
-  const [maintenanceMode, setMaintenanceMode] = useState(()=>lsGet("rampageMaintenance",false));
+  const [bgImage, setBgImage]               = useState("");
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [bossScheduleCollapsed, setBossScheduleCollapsed] = useState(true);
 
   // ── Events & Attendance ──────────────────────────────────────────────────
@@ -305,8 +305,7 @@ export default function App() {
   useEffect(()=>{ lsSet("rampageHilders", hildersBosses); }, [hildersBosses]);
   useEffect(()=>{ lsSet("rampageEventPoints", eventPoints); }, [eventPoints]);
   useEffect(()=>{ lsSet("rampageAttCodes", eventAttCodes); }, [eventAttCodes]);
-  useEffect(()=>{ lsSet("rampageBgImage", bgImage); }, [bgImage]);
-  useEffect(()=>{ lsSet("rampageMaintenance", maintenanceMode); }, [maintenanceMode]);
+  // bgImage and maintenanceMode are now synced via Supabase settings table
 
   // ── Sync boss timer with real time on load ────────────────────────────────
   useEffect(()=>{
@@ -378,6 +377,7 @@ export default function App() {
     loadAuctionItems();
     loadEvents();
     loadWinners();
+    loadSettings();
   },[]);
 
   // ── Supabase real-time subscriptions ─────────────────────────────────────
@@ -410,11 +410,18 @@ export default function App() {
       .on("postgres_changes",{event:"*",schema:"public",table:"winners"},()=>{ loadWinners(); })
       .subscribe();
 
+    // Settings real-time (maintenance mode, background image)
+    const settingsSub = supabase
+      .channel("settings_rt")
+      .on("postgres_changes",{event:"*",schema:"public",table:"settings"},()=>{ loadSettings(); })
+      .subscribe();
+
     return ()=>{
       supabase.removeChannel(auctionSub);
       supabase.removeChannel(membersSub);
       supabase.removeChannel(eventsSub);
       supabase.removeChannel(winnersSub);
+      supabase.removeChannel(settingsSub);
     };
   },[]);
 
@@ -481,6 +488,18 @@ export default function App() {
     } catch {
       setWinners(lsGet("rampageWinners",[]));
     }
+  };
+
+  const loadSettings = async()=>{
+    try {
+      const { data } = await supabase.from("settings").select("*");
+      if (data) {
+        data.forEach(row=>{
+          if (row.key === "maintenance_mode") setMaintenanceMode(row.value === "true");
+          if (row.key === "background_image") setBgImage(row.value || "");
+        });
+      }
+    } catch {}
   };
 
   // Persist members locally as backup
@@ -1990,7 +2009,11 @@ export default function App() {
                       <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:rs.color}} />
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
                         <div style={{display:"flex",alignItems:"center",gap:11}}>
-                          <div style={{width:48,height:48,borderRadius:12,background:rs.bg,border:`1px solid ${rs.color}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24}}>{w.image}</div>
+                          <div style={{width:48,height:48,borderRadius:12,background:rs.bg,border:`1px solid ${rs.color}30`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,overflow:"hidden"}}>
+                            {w.image && (w.image.startsWith("http") || w.image.startsWith("data"))
+                              ? <img src={w.image} alt={w.itemName} style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}} />
+                              : (w.image || "🏺")}
+                          </div>
                           <div>
                             <div style={{fontSize:14,fontWeight:700,color:"#e2e8f0"}}>{w.itemName}</div>
                             <span style={{fontSize:10.5,color:rs.color,fontWeight:700}}>{w.rarity}</span>
@@ -2146,18 +2169,23 @@ export default function App() {
                   <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
                     <input className="dark-input" placeholder="Paste image URL or upload below..."
                       value={bgImage} onChange={e=>setBgImage(e.target.value)}
+                      onBlur={async e=>{ await supabase.from("settings").upsert({key:"background_image", value: e.target.value}); }}
                       style={{flex:1,minWidth:220}} />
                     <label style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"11px 18px",borderRadius:10,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"'Exo 2',sans-serif",whiteSpace:"nowrap"}}>
                       📁 Upload
                       <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{
                         const file=e.target.files?.[0]; if(!file) return;
                         const reader=new FileReader();
-                        reader.onload=ev=>setBgImage(ev.target.result);
+                        reader.onload=async ev=>{
+                          const val = ev.target.result;
+                          setBgImage(val);
+                          await supabase.from("settings").upsert({key:"background_image", value: val});
+                          showToast("🖼️ Background image set!");
+                        };
                         reader.readAsDataURL(file);
-                        showToast("🖼️ Background image set!");
                       }} />
                     </label>
-                    {bgImage&&<button className="btn" onClick={()=>{setBgImage("");showToast("🗑️ Background removed","warn");}}
+                    {bgImage&&<button className="btn" onClick={async()=>{setBgImage("");await supabase.from("settings").upsert({key:"background_image", value:""});showToast("🗑️ Background removed","warn");}}
                       style={{background:"rgba(248,113,113,0.12)",border:"1px solid rgba(248,113,113,0.25)",color:"#f87171",padding:"11px 16px",fontSize:12}}>✕ Remove</button>}
                   </div>
                   {bgImage&&<div style={{marginTop:12,borderRadius:10,overflow:"hidden",height:80,position:"relative"}}>
@@ -2173,9 +2201,10 @@ export default function App() {
                   <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:maintenanceMode?"#fbbf24":"#f1f5f9",marginBottom:6,letterSpacing:"0.04em"}}>🔧 Maintenance Mode <span style={{fontSize:10,color:"#f59e0b",fontWeight:600,background:"rgba(251,191,36,0.1)",padding:"2px 7px",borderRadius:4,marginLeft:6}}>ADMIN ONLY</span></h3>
                   <p style={{color:"#3d5070",fontSize:11.5,marginBottom:16,lineHeight:1.6}}>When enabled, non-admin members will see a maintenance screen and cannot access the tracker. Only Admins bypass this.</p>
                   <div style={{display:"flex",alignItems:"center",gap:14}}>
-                    <button className="btn" onClick={()=>{
+                    <button className="btn" onClick={async()=>{
                       const next=!maintenanceMode;
                       setMaintenanceMode(next);
+                      await supabase.from("settings").upsert({key:"maintenance_mode", value: String(next)});
                       showToast(next?"🔧 Maintenance mode ENABLED — members are blocked":"✅ Maintenance mode DISABLED — app is live",next?"warn":"success");
                     }} style={{background:maintenanceMode?"linear-gradient(135deg,#f59e0b,#d97706)":"rgba(255,255,255,0.06)",border:maintenanceMode?"none":"1px solid rgba(255,255,255,0.12)",color:maintenanceMode?"#0a0c18":"#64748b",padding:"12px 28px",fontSize:14,fontWeight:800,letterSpacing:"0.04em"}}>
                       {maintenanceMode?"🔴 MAINTENANCE ON — Click to Disable":"⚫ Enable Maintenance Mode"}
