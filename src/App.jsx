@@ -267,6 +267,9 @@ export default function App() {
   const [showWipeConfirm, setShowWipeConfirm] = useState(false);
   const [wipeLoading, setWipeLoading] = useState(false);
   const [bossImageModal, setBossImageModal] = useState(null);
+  const [navIconImages, setNavIconImages] = useState(()=>lsGet("rampageNavIcons",{}));
+  const [navIconUploadTarget, setNavIconUploadTarget] = useState(null);
+  const navIconRef = useRef(null);
 
   // ── Events & Attendance ──────────────────────────────────────────────────
   const [events, setEvents]           = useState([]);
@@ -287,6 +290,10 @@ export default function App() {
   const [showMemberAttModal, setShowMemberAttModal] = useState(null); // {eventId, event}
   const [generatedCode, setGeneratedCode] = useState(""); // shown to admin after generation
   const [ymirPointsModal, setYmirPointsModal] = useState(null); // eventId for admin to assign Ymir points
+  const [attCodeExpiryMins, setAttCodeExpiryMins] = useState(10); // editable expiry in minutes
+  const [eventImages, setEventImages] = useState(()=>lsGet("rampageEventImages",{}));
+  const [eventImgUploadTarget, setEventImgUploadTarget] = useState(null);
+  const eventImgRef = useRef(null);
 
   const fileRef    = useRef(null);
   const bossImgRef = useRef(null);
@@ -303,6 +310,8 @@ export default function App() {
   useEffect(()=>{ lsSet("rampageHilders", hildersBosses); }, [hildersBosses]);
   useEffect(()=>{ lsSet("rampageEventPoints", eventPoints); }, [eventPoints]);
   useEffect(()=>{ lsSet("rampageAttCodes", eventAttCodes); }, [eventAttCodes]);
+  useEffect(()=>{ lsSet("rampageNavIcons", navIconImages); }, [navIconImages]);
+  useEffect(()=>{ lsSet("rampageEventImages", eventImages); }, [eventImages]);
 
   // ── Sync boss timer with real time on load ────────────────────────────────
   useEffect(()=>{
@@ -675,6 +684,30 @@ export default function App() {
     setTimeout(()=>{ setUploadMsg("✅ Saved!"); setUploading(false); setTimeout(()=>setUploadMsg(""),3000); },1200);
   };
 
+  // ── Nav icon upload ───────────────────────────────────────────────────────
+  const handleNavIconUpload = (e)=>{
+    const file = e.target.files?.[0]; if(!file||!navIconUploadTarget) return;
+    const reader = new FileReader();
+    reader.onload = ev=>{
+      setNavIconImages(prev=>({...prev,[navIconUploadTarget]:ev.target.result}));
+      showToast(`🖼️ Icon updated for ${navIconUploadTarget}`);
+    };
+    reader.readAsDataURL(file);
+    e.target.value="";
+  };
+
+  // ── Event image upload ────────────────────────────────────────────────────
+  const handleEventImgUpload = (e)=>{
+    const file = e.target.files?.[0]; if(!file||!eventImgUploadTarget) return;
+    const reader = new FileReader();
+    reader.onload = ev=>{
+      setEventImages(prev=>({...prev,[eventImgUploadTarget]:ev.target.result}));
+      showToast("🖼️ Event image updated!");
+    };
+    reader.readAsDataURL(file);
+    e.target.value="";
+  };
+
   // ── Boss image upload ──────────────────────────────────────────────────────
   const handleBossImageUpload = (e)=>{
     const file = e.target.files?.[0]; if(!file||!bossImageModal) return;
@@ -999,7 +1032,8 @@ export default function App() {
   // ── Attendance Code Security ───────────────────────────────────────────────
   const generateAttCode = async(eventId)=>{
     const code = Math.random().toString(36).substring(2,8).toUpperCase();
-    const codeData = { code, expiresAt: Date.now() + 10*60*1000, usedBy:[] };
+    const expiryMs = (parseInt(attCodeExpiryMins)||10) * 60 * 1000;
+    const codeData = { code, expiresAt: Date.now() + expiryMs, expiryMins: parseInt(attCodeExpiryMins)||10, usedBy:[] };
     setEventAttCodes(prev=>({...prev,[eventId]:codeData}));
     setGeneratedCode(code);
     // Also write the code into the events table so other admins can see it if needed
@@ -1448,6 +1482,7 @@ export default function App() {
             </div>}
           </div>
           <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleLogoUpload} />
+          <input ref={navIconRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleNavIconUpload} />
 
           {/* Current user */}
           <div style={{margin:"12px 9px 8px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:collapsed?"12px 0":"13px 15px",display:"flex",alignItems:"center",gap:11,position:"relative",justifyContent:collapsed?"center":"flex-start"}}>
@@ -1465,13 +1500,38 @@ export default function App() {
 
           {/* Nav */}
           <nav style={{padding:"6px 9px",flex:1,display:"flex",flexDirection:"column",gap:3}}>
-            {NAV.map(n=>(
-              <button key={n.id} className={`nav-btn${activeNav===n.id?" active":""}`} onClick={()=>setActiveNav(n.id)}>
-                <span style={{fontSize:16,flexShrink:0}}>{n.icon}</span>
-                <span className="sidebar-label">{n.label}</span>
-                {n.id==="events"&&events.length>0&&!collapsed&&<span style={{marginLeft:"auto",background:"rgba(99,102,241,0.25)",color:"#a5b4fc",fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:5}}>{events.length}</span>}
-              </button>
-            ))}
+            {NAV.map(n=>{
+              const isSettings = n.id==="settings";
+              const navImg = navIconImages[n.id];
+              return (
+                <div key={n.id} style={{position:"relative",display:"flex",alignItems:"center"}}>
+                  <button className={`nav-btn${activeNav===n.id?" active":""}`} onClick={()=>setActiveNav(n.id)} style={{flex:1,display:"flex",alignItems:"center",gap:collapsed?0:10,justifyContent:collapsed?"center":"flex-start",padding:collapsed?"10px 0":"9px 12px",position:"relative"}}>
+                    {/* Icon area */}
+                    <div style={{width:28,height:28,borderRadius:8,overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",background:navImg&&!isSettings?"transparent":"rgba(255,255,255,0.04)",position:"relative"}}>
+                      {isSettings ? (
+                        <span style={{fontSize:16}}>{n.icon}</span>
+                      ) : navImg ? (
+                        <img src={navImg} alt={n.label} style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:8}} />
+                      ) : (
+                        <span style={{fontSize:16}}>{n.icon}</span>
+                      )}
+                    </div>
+                    <span className="sidebar-label">{n.label}</span>
+                    {n.id==="events"&&events.length>0&&!collapsed&&<span style={{marginLeft:"auto",background:"rgba(99,102,241,0.25)",color:"#a5b4fc",fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:5}}>{events.length}</span>}
+                  </button>
+                  {/* Upload icon button — only when sidebar is expanded, only for non-settings, only for admin */}
+                  {!collapsed&&!isSettings&&isAdmin&&(
+                    <button
+                      title={`Upload icon for ${n.label}`}
+                      onClick={e=>{e.stopPropagation();setNavIconUploadTarget(n.id);setTimeout(()=>navIconRef.current?.click(),50);}}
+                      style={{position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.25)",borderRadius:6,padding:"2px 5px",cursor:"pointer",fontSize:10,color:"#60a5fa",lineHeight:1,opacity:0.7,transition:"opacity 0.15s"}}
+                      onMouseEnter={e=>e.currentTarget.style.opacity="1"}
+                      onMouseLeave={e=>e.currentTarget.style.opacity="0.7"}
+                    >📷</button>
+                  )}
+                </div>
+              );
+            })}
           </nav>
 
           {/* Bottom: Admin + Logout */}
@@ -1772,12 +1832,24 @@ export default function App() {
                   const evType = EVENT_TYPES.find(e=>e.id===ev.type);
                   const presentCount = Object.values(ev.attendance||{}).filter(Boolean).length;
                   const isMarking = markEventId===ev.id;
+                  const evImg = eventImages[ev.id];
                   return(
                     <div key={ev.id} className="event-card">
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10,marginBottom:12}}>
                         <div style={{display:"flex",alignItems:"center",gap:12}}>
-                          <div style={{width:44,height:44,borderRadius:12,background:`${evType?.color||"#64748b"}18`,border:`1px solid ${evType?.color||"#64748b"}40`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>
-                            {ev.icon}
+                          {/* 76x76 image upload slot */}
+                          <div style={{position:"relative",flexShrink:0}}>
+                            <div style={{width:76,height:76,borderRadius:14,background:`${evType?.color||"#64748b"}18`,border:`1px solid ${evType?.color||"#64748b"}40`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",cursor:canManage?"pointer":"default"}}
+                              onClick={()=>{ if(!canManage) return; setEventImgUploadTarget(ev.id); setTimeout(()=>eventImgRef.current?.click(),50); }}
+                              title={canManage?"Upload event image (76×76)":undefined}>
+                              {evImg
+                                ? <img src={evImg} alt={ev.name} style={{width:"100%",height:"100%",objectFit:"cover"}} />
+                                : <span style={{fontSize:28}}>{ev.icon}</span>
+                              }
+                            </div>
+                            {canManage&&(
+                              <div style={{position:"absolute",bottom:2,right:2,background:"rgba(0,0,0,0.65)",borderRadius:5,padding:"2px 4px",fontSize:8,color:"#60a5fa",fontWeight:700,letterSpacing:"0.04em",pointerEvents:"none"}}>76×76</div>
+                            )}
                           </div>
                           <div>
                             <div style={{fontSize:15,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.02em"}}>{ev.name}</div>
@@ -1804,9 +1876,9 @@ export default function App() {
                                 {isMarking?"✅ Done":"📋 Mark"}
                               </button>
                               <button className="btn" onClick={()=>{setShowAttCodeModal(ev.id);setGeneratedCode("");}}
-                                style={{background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.3)",color:"#fbbf24",padding:"8px 12px",fontSize:12}}
+                                style={{background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.3)",color:"#fbbf24",padding:"8px 12px",fontSize:12,display:"flex",alignItems:"center",gap:5}}
                                 title="Generate attendance verification code">
-                                🔑
+                                🔑 <span style={{fontSize:11}}>Key</span>
                               </button>
                               <button className="btn" onClick={()=>handleDeleteEvent(ev.id)}
                                 style={{background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.2)",color:"#f87171",padding:"8px 10px",fontSize:12}}>
@@ -2256,6 +2328,7 @@ export default function App() {
       {/* ═══ MODALS ═══ */}
       <input ref={bossImgRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleBossImageUpload} />
       <input ref={auctionImgRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleAuctionImageUpload} />
+      <input ref={eventImgRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleEventImgUpload} />
 
       {/* Add Auction Item Modal */}
       {showAddAuction&&(
@@ -2425,9 +2498,34 @@ export default function App() {
       {showAttCodeModal&&(
         <div onClick={()=>{setShowAttCodeModal(null);setGeneratedCode("");}} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",backdropFilter:"blur(8px)",zIndex:250,display:"flex",alignItems:"center",justifyContent:"center"}}>
           <div className="modal-box" onClick={e=>e.stopPropagation()}
-            style={{background:"#0a0c18",border:"1px solid rgba(251,191,36,0.3)",borderRadius:22,padding:"30px 32px",width:400,boxShadow:"0 32px 100px rgba(0,0,0,0.9)"}}>
+            style={{background:"#0a0c18",border:"1px solid rgba(251,191,36,0.3)",borderRadius:22,padding:"30px 32px",width:420,boxShadow:"0 32px 100px rgba(0,0,0,0.9)"}}>
             <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:22,fontWeight:700,color:"#fbbf24",marginBottom:8,letterSpacing:"0.04em"}}>🔑 Attendance Code</h3>
-            <p style={{color:"#3d5070",fontSize:12,marginBottom:20,lineHeight:1.7}}>Generate a one-time 6-character code. Share it verbally with guild members during the event. Code expires in <strong style={{color:"#fbbf24"}}>10 minutes</strong>. Members enter it to self-check-in — prevents fake attendance.</p>
+            <p style={{color:"#3d5070",fontSize:12,marginBottom:16,lineHeight:1.7}}>Generate a unique code and share it verbally with members during the event. Members enter it to self check-in — prevents fake attendance.</p>
+
+            {/* Expiry time editor */}
+            <div style={{background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.18)",borderRadius:12,padding:"12px 16px",marginBottom:18}}>
+              <div style={{fontSize:10.5,color:"#fbbf24",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:8}}>⏱ Code Expiration Time</div>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{display:"flex",gap:6,flex:1,flexWrap:"wrap"}}>
+                  {[5,10,15,30,60].map(m=>(
+                    <button key={m} onClick={()=>setAttCodeExpiryMins(m)}
+                      style={{padding:"5px 12px",borderRadius:7,cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontSize:11,fontWeight:700,
+                        background:attCodeExpiryMins===m?"rgba(251,191,36,0.25)":"rgba(255,255,255,0.04)",
+                        border:`1px solid ${attCodeExpiryMins===m?"rgba(251,191,36,0.5)":"rgba(255,255,255,0.1)"}`,
+                        color:attCodeExpiryMins===m?"#fbbf24":"#3d5070",transition:"all 0.15s"}}>
+                      {m}m
+                    </button>
+                  ))}
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                  <input type="number" min={1} max={1440} value={attCodeExpiryMins}
+                    onChange={e=>setAttCodeExpiryMins(Math.max(1,parseInt(e.target.value)||10))}
+                    style={{width:56,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:7,padding:"5px 8px",color:"#fbbf24",fontSize:13,fontWeight:700,fontFamily:"'Rajdhani',sans-serif",textAlign:"center",outline:"none"}} />
+                  <span style={{fontSize:11,color:"#3d5070"}}>min</span>
+                </div>
+              </div>
+            </div>
+
             {generatedCode?(
               <div style={{textAlign:"center",marginBottom:22}}>
                 <div style={{background:"rgba(251,191,36,0.08)",border:"2px dashed rgba(251,191,36,0.4)",borderRadius:16,padding:"24px",marginBottom:12}}>
@@ -2435,7 +2533,7 @@ export default function App() {
                   <div style={{fontSize:11,color:"#3d5070",marginTop:6}}>Share this code with guild members in-game or Discord</div>
                 </div>
                 <div style={{background:"rgba(52,211,153,0.08)",border:"1px solid rgba(52,211,153,0.2)",borderRadius:10,padding:"10px",fontSize:11.5,color:"#34d399"}}>
-                  ✅ Code is active · Expires in 10 min · Used by members who check in
+                  ✅ Code is active · Expires in {attCodeExpiryMins} min · Used by members who check in
                 </div>
               </div>
             ):(
@@ -2467,7 +2565,7 @@ export default function App() {
               onKeyDown={e=>e.key==="Enter"&&handleMemberSelfAttendance(showMemberAttModal.eventId,attCodeInput)}
               style={{textAlign:"center",fontFamily:"'Rajdhani',sans-serif",fontSize:28,fontWeight:700,letterSpacing:"0.2em",marginBottom:20}} maxLength={6} />
             <div style={{background:"rgba(99,102,241,0.07)",border:"1px solid rgba(99,102,241,0.2)",borderRadius:10,padding:"10px 14px",marginBottom:20,fontSize:11,color:"#6366f1",lineHeight:1.6}}>
-              🛡️ This code is only valid during the event and expires in 10 minutes. Each code can only be used once per member.
+              🛡️ This code is only valid during the event. Each code can only be used once per member. Ask your Leader or Elder if the code has expired.
             </div>
             <div style={{display:"flex",gap:11}}>
               <button className="btn" onClick={()=>{setShowMemberAttModal(null);setAttCodeInput("");}} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"11px"}}>Cancel</button>
