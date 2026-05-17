@@ -446,6 +446,15 @@ export default function App() {
     return ()=>clearInterval(t);
   },[alertEnabled, alertSound, playBossAlert]);
 
+  // ── Esc key closes boss timer modal only ─────────────────────────────────
+  useEffect(()=>{
+    const onKey = (e) => {
+      if (e.key === "Escape") setBossTimerModal(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // ── Restore session on refresh ────────────────────────────────────────────
   // ── Force reload when new version deployed ───────────────────────────────
   useEffect(()=>{
@@ -2871,7 +2880,7 @@ export default function App() {
 
       {/* Boss Timer Modal — HH:MM:SS */}
       {bossTimerModal&&(
-        <div onClick={()=>setBossTimerModal(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(6px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(6px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}}>
           <div className="modal-box" onClick={e=>e.stopPropagation()}
             style={{background:"#0a0c18",border:"1px solid rgba(255,255,255,0.1)",borderRadius:22,padding:"30px 32px",width:380,boxShadow:"0 32px 100px rgba(0,0,0,0.9)"}}>
             <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:21,fontWeight:700,color:"#f1f5f9",marginBottom:6,letterSpacing:"0.04em"}}>⏱ Set Respawn Timer</h3>
@@ -2894,6 +2903,7 @@ export default function App() {
               <button className="btn" onClick={()=>setBossTimerModal(null)} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"11px"}}>Cancel</button>
               <button className="btn" onClick={handleSetTimerHMS} style={{flex:2,background:"linear-gradient(135deg,#0f766e,#14b8a6)",color:"#fff",padding:"11px"}}>Set Timer</button>
             </div>
+            <p style={{textAlign:"center",fontSize:10,color:"#2d3a52",marginTop:12}}>Press <kbd style={{background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:4,padding:"1px 5px",fontSize:9.5,color:"#3d5070",fontFamily:"monospace"}}>Esc</kbd> to dismiss without saving</p>
           </div>
         </div>
       )}
@@ -3323,6 +3333,21 @@ function OverworldMapsPanel({ canManage }) {
 function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, canTimer, killFlash, onKill, onReset, onSetTimer, onImage }) {
   const [activeMode, setActiveMode] = useState("interserver");
   const [collapsed, setCollapsed] = useState(true);
+  const bodyRef = useRef(null);
+  const [bodyHeight, setBodyHeight] = useState(0);
+
+  useEffect(()=>{
+    if (!bodyRef.current) return;
+    if (!collapsed) {
+      setBodyHeight(bodyRef.current.scrollHeight);
+      // Re-measure after content changes (mode switch etc.)
+      const ro = new ResizeObserver(()=>{ if(bodyRef.current) setBodyHeight(bodyRef.current.scrollHeight); });
+      ro.observe(bodyRef.current);
+      return ()=>ro.disconnect();
+    } else {
+      setBodyHeight(0);
+    }
+  }, [collapsed, activeMode]);
 
   const modes = [
     { key:"interserver", label:"INTER-SERVER", color:"#f87171", border:"rgba(248,113,113,0.35)", bg:"rgba(248,113,113,0.08)", bosses:folkvangInterserver },
@@ -3352,7 +3377,7 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, c
   return (
     <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(245,158,11,0.35)",borderRadius:18,overflow:"hidden",marginBottom:22,boxShadow:"0 0 40px rgba(245,158,11,0.06)"}}>
       {/* Header */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:collapsed?"none":"1px solid rgba(255,255,255,0.06)",cursor:"pointer",background:"rgba(245,158,11,0.04)"}}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:"1px solid rgba(255,255,255,0.06)",cursor:"pointer",background:"rgba(245,158,11,0.04)"}}
         onClick={()=>setCollapsed(p=>!p)}>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{width:40,height:40,borderRadius:10,background:"rgba(245,158,11,0.15)",border:"1px solid rgba(245,158,11,0.35)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>🏔️</div>
@@ -3370,8 +3395,14 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, c
         </div>
       </div>
 
-      {!collapsed && (
-        <div style={{padding:"16px 20px"}}>
+      {/* Animated collapse body */}
+      <div style={{
+        maxHeight: collapsed ? 0 : bodyHeight,
+        overflow:"hidden",
+        transition:"max-height 0.42s cubic-bezier(0.4,0,0.2,1), opacity 0.35s",
+        opacity: collapsed ? 0 : 1,
+      }}>
+        <div ref={bodyRef} style={{padding:"16px 20px"}}>
           {/* Mode tabs */}
           <div style={{display:"flex",gap:8,marginBottom:18}}>
             {modes.map(mode=>(
@@ -3487,7 +3518,7 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, c
             })}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -3500,11 +3531,25 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, c
   const [editingName, setEditingName] = useState(null); // bossName being edited
   const [editNameVal, setEditNameVal] = useState("");
   const liveCount = bosses.filter(b=>b.secs===0).length;
+  const bodyRef = useRef(null);
+  const [bodyHeight, setBodyHeight] = useState(0);
+
+  useEffect(()=>{
+    if (!bodyRef.current) return;
+    if (!collapsed) {
+      setBodyHeight(bodyRef.current.scrollHeight);
+      const ro = new ResizeObserver(()=>{ if(bodyRef.current) setBodyHeight(bodyRef.current.scrollHeight); });
+      ro.observe(bodyRef.current);
+      return ()=>ro.disconnect();
+    } else {
+      setBodyHeight(0);
+    }
+  }, [collapsed]);
 
   return(
     <div style={{background:"rgba(255,255,255,0.02)",border:`1px solid ${color}35`,borderRadius:18,overflow:"hidden",marginBottom:22,boxShadow:`0 0 30px ${color}08`}}>
       {/* Header — same style as Folkvang */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:collapsed?"none":`1px solid ${color}20`,cursor:"pointer",background:`${color}05`}}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:`1px solid ${color}20`,cursor:"pointer",background:`${color}05`}}
         onClick={()=>setCollapsed(p=>!p)}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:15,fontWeight:700,color,letterSpacing:"0.06em"}}>{title}</div>
@@ -3516,8 +3561,14 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, c
         </div>
       </div>
 
-      {!collapsed && (
-        <div style={{padding:"14px 18px"}}>
+      {/* Animated collapse body */}
+      <div style={{
+        maxHeight: collapsed ? 0 : bodyHeight,
+        overflow:"hidden",
+        transition:"max-height 0.42s cubic-bezier(0.4,0,0.2,1), opacity 0.35s",
+        opacity: collapsed ? 0 : 1,
+      }}>
+        <div ref={bodyRef} style={{padding:"14px 18px"}}>
           {bossNames.map(bossName=>{
             const bossChannels = bosses.filter(b=>b.name===bossName);
             const templateBoss = bossChannels[0];
@@ -3620,7 +3671,7 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, c
             );
           })}
         </div>
-      )}
+      </div>
     </div>
   );
 }
