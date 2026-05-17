@@ -393,6 +393,11 @@ export default function App() {
       .on("postgres_changes",{event:"INSERT",schema:"public",table:"auction_items"},()=>{ loadAuctionItems(); })
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"auction_items"},(payload)=>{
         const u = payload.new;
+        // If item just got locked=true, remove it from auction — it belongs in Winners tab only
+        if(u.locked) {
+          setAuctionItems(prev=>prev.filter(item=>String(item.id)!==String(u.id)));
+          return;
+        }
         setAuctionItems(prev=>prev.map(item=>{
           if(String(item.id)!==String(u.id)) return item;
           return {
@@ -512,7 +517,16 @@ export default function App() {
     try {
       const { data, error } = await supabase.from("auction_items").select("*").order("created_at",{ascending:false});
       if (!error && data) {
-        setAuctionItems(data.map(i=>({
+        // Locked items have already been moved to winners — clean them up from auction_items table
+        const lockedItems = data.filter(i=>i.locked);
+        if(lockedItems.length > 0) {
+          // Silently delete any lingering locked items (they're safely in winners already)
+          lockedItems.forEach(async(i)=>{
+            try { await supabase.from("auction_items").delete().eq("id", i.id); } catch {}
+          });
+        }
+        // Only load non-locked items into auction state
+        setAuctionItems(data.filter(i=>!i.locked).map(i=>({
           ...i,
           bids: typeof i.bids === "string" ? JSON.parse(i.bids) : (i.bids||[]),
           endTime: i.end_time ? new Date(i.end_time).getTime() : (Date.now()+3600000),
@@ -1284,27 +1298,26 @@ export default function App() {
 
   const handleAnnounceWinner = async(item)=>{
     if(!item.highBidder) { showToast("❌ No bids placed yet","error"); return; }
-    // Check for duplicate — prevent announcing same item twice
-    const alreadyWon = winners.some(w=>w.itemName===item.name&&w.winner===item.highBidder);
+    // Check for duplicate by auction item ID (not name — admin can list 2 items with same name)
+    const alreadyWon = winners.some(w=>w.auction_item_id && String(w.auction_item_id)===String(item.id));
     if(alreadyWon) { showToast("⚠️ Winner already announced for this item","warn"); return; }
     const w = {
-      // No client-generated id — let Supabase auto-generate uuid
+      auction_item_id: item.id, // track by id so same-name items are handled correctly
       itemName: item.name, winner: item.highBidder, points: item.currentBid,
       date: new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}),
       claimed: false, rarity: item.rarity, image: item.image,
       created_at: new Date().toISOString(),
     };
     try {
-      // 1) Insert winner record
       const { error: wErr } = await supabase.from("winners").insert([w]);
       if(wErr) throw wErr;
-      // 2) Remove the auction item entirely (winner announced = auction done)
+      // Remove auction item — it now lives in Winners tab only
       const { error: dErr } = await supabase.from("auction_items").delete().eq("id", item.id);
       if(dErr) {
-        // Fallback: just lock it if delete fails
+        // Fallback: lock it so it's hidden from auction view (filtered out client-side)
         await supabase.from("auction_items").update({locked:true, winner:item.highBidder}).eq("id", item.id);
       }
-      // Optimistic local update
+      // Optimistic local update — remove from auction list immediately
       setAuctionItems(prev=>prev.filter(i=>String(i.id)!==String(item.id)));
       await loadWinners();
     } catch(e) {
@@ -2097,7 +2110,7 @@ export default function App() {
               )}
 
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(320px,1fr))",gap:16}}>
-                {auctionItems.map(item=>{
+                {auctionItems.filter(item=>!item.locked).map(item=>{
                   const rs=RARITY_STYLE[item.rarity]||RARITY_STYLE.Common;
                   const myBid=item.bids?.find(b=>b.bidder===currentUser?.name);
                   const amWinning=item.highBidder===currentUser?.name;
