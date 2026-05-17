@@ -476,6 +476,8 @@ export default function App() {
     loadWinners();
     loadSettings();
     loadBossTimers();
+    // Push any locally-stored boss images up to Supabase so all users see them
+    syncLocalImagesToSupabase();
   },[]);
 
   // ── Supabase real-time subscriptions ─────────────────────────────────────
@@ -622,6 +624,20 @@ export default function App() {
         data.forEach(row=>{
           if (row.key === "maintenance_mode") setMaintenanceMode(row.value === "true");
           if (row.key === "background_image") setBgImage(row.value || "");
+          // Restore boss names saved by admin
+          if (row.key && row.key.startsWith("boss_names_") && row.value) {
+            try {
+              const group = row.key.replace("boss_names_", "");
+              const names = JSON.parse(row.value); // [{id, name}]
+              const setter = bossSettersRef.current[group];
+              if (setter && Array.isArray(names)) {
+                setter(prev=>prev.map(b=>{
+                  const found = names.find(n=>n.id===b.id);
+                  return found ? {...b, name:found.name} : b;
+                }));
+              }
+            } catch {}
+          }
         });
       }
     } catch {}
@@ -640,13 +656,56 @@ export default function App() {
             ? { ...b,
                 secs:    secs    != null ? secs    : b.secs,
                 elapsed: elapsed != null ? elapsed : b.elapsed,
-                image:   image   != null ? image   : b.image,
+                // Always apply image from DB — even if local has one, DB is source of truth
+                image:   image   || b.image,
               }
             : b
           ));
         }
       });
     } catch(e) { console.warn("loadBossTimers error:", e); }
+  };
+
+  // ── Push any locally-cached boss images up to Supabase ───────────────────
+  // Runs when admin loads the app — finds bosses whose image exists locally
+  // but has no DB row yet, and upserts them so all users can see the image.
+  const syncLocalImagesToSupabase = async()=>{
+    const allGroups = [
+      { key:"live4",                bosses:lsGet("rampageBosses",        []) },
+      { key:"myrkrheim",            bosses:lsGet("rampageMyrkrheim",     []) },
+      { key:"folkvang_normal",      bosses:lsGet("rampageFolkvangN",     []) },
+      { key:"folkvang_interserver", bosses:lsGet("rampageFolkvangI",     []) },
+      { key:"canyon",               bosses:lsGet("rampageCanyon",        []) },
+      { key:"lindwurm",             bosses:lsGet("rampageLindwurm",      []) },
+      { key:"hilders",              bosses:lsGet("rampageHilders",       []) },
+    ];
+    try {
+      const { data: existing } = await supabase.from("boss_timers").select("boss_id,image");
+      const dbImages = {};
+      (existing||[]).forEach(r=>{ dbImages[r.boss_id] = r.image; });
+
+      for (const { key, bosses } of allGroups) {
+        // Push boss names to Supabase so all users see renamed bosses
+        const hasRename = bosses.some(b => b.name && !b.name.startsWith("Lv.6") === false);
+        const namesPayload = bosses.map(b=>({id:b.id,name:b.name}));
+        supabase.from("settings").upsert(
+          { key:`boss_names_${key}`, value: JSON.stringify(namesPayload) },
+          { onConflict:"key" }
+        ).catch(()=>{});
+
+        for (const b of bosses) {
+          if (!b.image) continue; // no local image, skip
+          const dbImg = dbImages[b.id];
+          // If DB has no image for this boss, upsert the local one
+          if (!dbImg) {
+            await supabase.from("boss_timers").upsert(
+              { boss_id:b.id, group:key, image:b.image, secs:b.secs||0, elapsed:b.elapsed||0, updated_at:new Date().toISOString() },
+              { onConflict:"boss_id" }
+            ).catch(()=>{});
+          }
+        }
+      }
+    } catch(e) { console.warn("syncLocalImagesToSupabase error:", e); }
   };
 
   // Persist members locally as backup
@@ -911,7 +970,15 @@ export default function App() {
   // Update boss image for any group — uploads to Supabase storage boss-images bucket
   const handleRenameBoss = (group, oldName, newName) => {
     if (!newName.trim() || newName === oldName) return;
-    getSetterByGroup(group)(prev=>prev.map(b=>b.name===oldName?{...b,name:newName}:b));
+    getSetterByGroup(group)(prev=>{
+      const updated = prev.map(b=>b.name===oldName?{...b,name:newName}:b);
+      // Sync renamed boss names to Supabase so all users see correct names
+      supabase.from("settings").upsert(
+        { key:`boss_names_${group}`, value: JSON.stringify(updated.map(b=>({id:b.id,name:b.name}))) },
+        { onConflict:"key" }
+      ).catch(()=>{});
+      return updated;
+    });
     showToast(`✅ Boss renamed!`);
   };
 
@@ -943,7 +1010,18 @@ export default function App() {
         const freshUrl = `${publicUrl}?t=${Date.now()}`;
         getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:freshUrl}:b));
         // Sync image to boss_timers so ALL users see the updated image
-        supabase.from("boss_timers").upsert({boss_id:id, group, image:freshUrl, updated_at:new Date().toISOString()}, {onConflict:"boss_id"}).catch(()=>{});
+        // Read current secs/elapsed so the upsert row is complete (not null)
+        const setter2 = getSetterByGroup(group);
+        let curSecs = 0, curElapsed = 0;
+        setter2(prev=>{
+          const b = prev.find(x=>x.id===id);
+          if(b){ curSecs=b.secs||0; curElapsed=b.elapsed||0; }
+          return prev; // no change, just reading
+        });
+        supabase.from("boss_timers").upsert(
+          {boss_id:id, group, image:freshUrl, secs:curSecs, elapsed:curElapsed, updated_at:new Date().toISOString()},
+          {onConflict:"boss_id"}
+        ).catch(()=>{});
         setBossImageModal(null);
         showToast("🖼️ Boss image uploaded!");
       }
