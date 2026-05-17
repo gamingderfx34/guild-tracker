@@ -156,8 +156,10 @@ const RARITY_STYLE = {
 };
 
 const STATUS_STYLE = {
-  Active:  { bg:"rgba(52,211,153,0.12)", color:"#34d399", dot:"#34d399" },
-  Offline: { bg:"rgba(100,116,139,0.1)", color:"#64748b", dot:"#475569" },
+  Active:         { bg:"rgba(52,211,153,0.12)",  color:"#34d399", dot:"#34d399" },
+  Away:           { bg:"rgba(253,224,71,0.12)",   color:"#fde047", dot:"#fde047" },
+  "Do Not Disturb": { bg:"rgba(248,113,113,0.12)", color:"#f87171", dot:"#ef4444" },
+  Offline:        { bg:"rgba(100,116,139,0.1)",  color:"#64748b", dot:"#475569" },
 };
 
 const BOSS_STATUS_STYLE = {
@@ -703,6 +705,12 @@ export default function App() {
   };
 
   // Update boss image for any group — uploads to Supabase storage boss-images bucket
+  const handleRenameBoss = (group, oldName, newName) => {
+    if (!newName.trim() || newName === oldName) return;
+    getSetterByGroup(group)(prev=>prev.map(b=>b.name===oldName?{...b,name:newName}:b));
+    showToast(`✅ Boss renamed!`);
+  };
+
   const handleBossImageUploadGroup = async (file, id, group)=>{
     if (!file || !id || !group) return;
     showToast("⏳ Uploading image...","info");
@@ -1073,15 +1081,16 @@ export default function App() {
     };
     try {
       await supabase.from("winners").insert([w]);
+      // Mark as locked first
       await supabase.from("auction_items").update({locked:true,winner:item.highBidder}).eq("id",item.id);
       await loadAuctionItems();
-      // Real-time sub handles loadWinners()
+      await loadWinners();
     } catch {
       setWinners(prev=>[...prev,w]);
       setAuctionItems(prev=>prev.map(i=>i.id===item.id?{...i,locked:true,winner:item.highBidder}:i));
     }
     if(discordConnected) showToast("📢 Discord notified: Winner announced!","info");
-    showToast(`🏆 ${item.highBidder} won ${item.name}!`);
+    showToast(`🏆 ${item.highBidder} won ${item.name}! You can now remove the tab.`);
   };
 
   const handleClaimWinner = async(id)=>{
@@ -1153,6 +1162,9 @@ export default function App() {
     .filter(m=>m.name.toLowerCase().includes(search.toLowerCase())||m.cls?.toLowerCase().includes(search.toLowerCase()))
     .sort((a,b)=>(ROLE_ORDER[a.role]??99)-(ROLE_ORDER[b.role]??99));
   const activeCount    = members.filter(m=>m.status==="Active").length;
+  const awayCount      = members.filter(m=>m.status==="Away").length;
+  const dndCount       = members.filter(m=>m.status==="Do Not Disturb").length;
+  const onlineCount    = members.filter(m=>m.status!=="Offline").length;
   const leaderCount    = members.filter(m=>m.role==="Leader").length;
   const elderCount     = members.filter(m=>m.role==="Elder").length;
   const isLeader       = currentUser?.role==="Leader" || currentUser?.role==="Admin";
@@ -1281,10 +1293,22 @@ export default function App() {
               </div>
               <div style={{minWidth:0,flex:1}}>
                 <div style={{fontSize:13.5,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.04em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{currentUser.name}</div>
-                <span style={{fontSize:11,color:ROLE_STYLE[currentUser.role]?.color||"#a5b4fc"}}>{displayRole(currentUser)}</span>
+                <div style={{display:"flex",alignItems:"center",gap:5,marginTop:2}}>
+                  <span style={{fontSize:11,color:ROLE_STYLE[currentUser.role]?.color||"#a5b4fc"}}>{displayRole(currentUser)}</span>
+                  <select
+                    value={members.find(m=>m.id===currentUser?.id)?.status||"Active"}
+                    onChange={async e=>{
+                      const newStatus = e.target.value;
+                      try { await supabase.from("members").update({status:newStatus}).eq("id",currentUser.id); } catch {}
+                      setMembers(prev=>prev.map(m=>m.id===currentUser.id?{...m,status:newStatus}:m));
+                    }}
+                    style={{fontSize:9.5,background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:5,color:STATUS_STYLE[members.find(m=>m.id===currentUser?.id)?.status||"Active"]?.color||"#34d399",padding:"1px 4px",cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:700,outline:"none",maxWidth:90}}>
+                    {Object.keys(STATUS_STYLE).map(s=><option key={s} value={s} style={{background:"#0a0c18",color:"#e2e8f0"}}>{s}</option>)}
+                  </select>
+                </div>
               </div>
             </>}
-            <div style={{position:"absolute",top:10,right:11,width:8,height:8,borderRadius:"50%",background:"#34d399",boxShadow:"0 0 10px #34d399"}} />
+            <div style={{position:"absolute",top:10,right:11,width:8,height:8,borderRadius:"50%",background:STATUS_STYLE[members.find(m=>m.id===currentUser?.id)?.status||"Active"]?.dot||"#34d399",boxShadow:`0 0 10px ${STATUS_STYLE[members.find(m=>m.id===currentUser?.id)?.status||"Active"]?.dot||"#34d399"}`}} />
           </div>
 
           {/* Nav */}
@@ -1355,10 +1379,26 @@ export default function App() {
 
           {/* ── DASHBOARD ── */}
           {activeNav==="dashboard"&&<div className="page">
+            {/* Field Boss Schedule on Dashboard */}
+            <div style={{background:"rgba(248,113,113,0.06)",border:"1px solid rgba(248,113,113,0.2)",borderRadius:16,padding:"16px 20px",marginBottom:18}}>
+              <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:15,fontWeight:700,color:"#f87171",marginBottom:10,letterSpacing:"0.04em"}}>👹 Field Boss Schedule (UTC+8)</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:8}}>
+                {FIELD_BOSS_SCHEDULE.map((b,i)=>{
+                  const isToday = b.days.includes(getDayName());
+                  return(
+                    <div key={i} style={{background:isToday?"rgba(248,113,113,0.08)":"rgba(255,255,255,0.02)",border:`1px solid ${isToday?"rgba(248,113,113,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:10,padding:"10px 13px"}}>
+                      <div style={{fontSize:12,fontWeight:700,color:isToday?"#f87171":"#e2e8f0"}}>{b.name}{isToday&&<span style={{marginLeft:8,fontSize:10,background:"rgba(248,113,113,0.2)",color:"#f87171",padding:"1px 6px",borderRadius:4}}>TODAY</span>}</div>
+                      <div style={{fontSize:10,color:"#3d5070",marginTop:2}}>{b.map}</div>
+                      <div style={{fontSize:10.5,color:"#60a5fa",marginTop:3}}>{b.days.join(", ")} · {b.time}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14,marginBottom:22}}>
               {[
                 {label:"Total Members", value:members.length,              icon:"👥", color:"#818cf8", glow:"rgba(129,140,248,0.15)"},
-                {label:"Online Now",    value:activeCount,                  icon:"🟢", color:"#34d399", glow:"rgba(52,211,153,0.15)"},
+                {label:"Online Now",    value:onlineCount,                  icon:"🟢", color:"#34d399", glow:"rgba(52,211,153,0.15)"},
                 {label:"Total Events",  value:totalEvents,                  icon:"📅", color:"#fbbf24", glow:"rgba(251,191,36,0.15)"},
                 {label:"Guild Points",  value:totalGuildPoints.toLocaleString(), icon:"🏆", color:"#f87171", glow:"rgba(248,113,113,0.15)"},
               ].map(s=>(
@@ -1428,9 +1468,6 @@ export default function App() {
                 <span>Boss timers <strong>persist across sessions</strong> — they continue counting down even after refresh. Elapsed time shown when boss is LIVE.</span>
               </div>
 
-              {/* ── OVERWORLD MAPS ── */}
-              <OverworldMapsPanel canManage={canManage} />
-
               {/* ── FOLKVANG · VALHALLA DUNGEON ── */}
               <FolkvangDungeonCard
                 folkvangNormal={folkvangNormal}
@@ -1442,23 +1479,6 @@ export default function App() {
                 onSetTimer={(id,group)=>{setBossTimerModal({id,group});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
                 onImage={(id,group)=>{setBossImageModal({id,group});bossImgRef.current?.click();}}
               />
-
-              {/* Field Boss Schedule */}
-              <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:16,padding:"18px 20px",marginBottom:22}}>
-                <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,color:"#f87171",marginBottom:12,letterSpacing:"0.04em"}}>👹 Field Boss Schedule (UTC+8)</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10}}>
-                  {FIELD_BOSS_SCHEDULE.map((b,i)=>{
-                    const isToday = b.days.includes(getDayName());
-                    return(
-                      <div key={i} style={{background:isToday?"rgba(248,113,113,0.08)":"rgba(255,255,255,0.02)",border:`1px solid ${isToday?"rgba(248,113,113,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:11,padding:"12px 14px"}}>
-                        <div style={{fontSize:12.5,fontWeight:700,color:isToday?"#f87171":"#e2e8f0"}}>{b.name}{isToday&&<span style={{marginLeft:8,fontSize:10,background:"rgba(248,113,113,0.2)",color:"#f87171",padding:"1px 6px",borderRadius:4}}>TODAY</span>}</div>
-                        <div style={{fontSize:10.5,color:"#3d5070",marginTop:3}}>{b.map}</div>
-                        <div style={{fontSize:11,color:"#60a5fa",marginTop:4}}>{b.days.join(", ")} · {b.time}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
 
               {/* ── MYRKRHEIM BOSSES ── */}
               <BossGroupPanel
@@ -1475,6 +1495,7 @@ export default function App() {
                 onImage={(id)=>{setBossImageModal({id,group:"myrkrheim"});bossImgRef.current?.click();}}
                 onAddChannel={(bossName,color)=>handleAddChannel("myrkrheim",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"myrkrheim")}
+                onRenameBoss={(oldName,newName)=>handleRenameBoss("myrkrheim",oldName,newName)}
                 showRespawnEdit={false}
               />
 
@@ -1493,6 +1514,7 @@ export default function App() {
                 onImage={(id)=>{setBossImageModal({id,group:"live4"});bossImgRef.current?.click();}}
                 onAddChannel={(bossName,color)=>handleAddChannel("live4",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"live4")}
+                onRenameBoss={(oldName,newName)=>handleRenameBoss("live4",oldName,newName)}
                 showRespawnEdit={false}
               />
 
@@ -1512,6 +1534,7 @@ export default function App() {
                 onAddChannel={(bossName,color)=>handleAddChannel("canyon",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"canyon")}
                 onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"canyon",secs)}
+                onRenameBoss={(oldName,newName)=>handleRenameBoss("canyon",oldName,newName)}
                 showRespawnEdit={true}
               />
 
@@ -1531,6 +1554,7 @@ export default function App() {
                 onAddChannel={(bossName,color)=>handleAddChannel("lindwurm",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"lindwurm")}
                 onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"lindwurm",secs)}
+                onRenameBoss={(oldName,newName)=>handleRenameBoss("lindwurm",oldName,newName)}
                 showRespawnEdit={true}
               />
 
@@ -1550,6 +1574,7 @@ export default function App() {
                 onAddChannel={(bossName,color)=>handleAddChannel("hilders",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"hilders")}
                 onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"hilders",secs)}
+                onRenameBoss={(oldName,newName)=>handleRenameBoss("hilders",oldName,newName)}
                 showRespawnEdit={true}
               />
             </div>
@@ -1819,6 +1844,12 @@ export default function App() {
                             <div style={{fontSize:20}}>🔒</div>
                             <div style={{color:"#64748b",fontSize:12,fontWeight:700,marginTop:4}}>AUCTION ENDED</div>
                             <div style={{color:"#94a3b8",fontSize:11,marginTop:2}}>Won by {item.winner}</div>
+                            {isAdmin&&(
+                              <button className="btn" onClick={()=>handleDeleteAuctionItem(item.id)}
+                                style={{marginTop:10,background:"rgba(248,113,113,0.18)",border:"1px solid rgba(248,113,113,0.4)",color:"#f87171",padding:"7px 16px",fontSize:11,fontWeight:700}}>
+                                🗑️ Remove Tab
+                              </button>
+                            )}
                           </div>
                         </div>
                       )}
@@ -1933,7 +1964,8 @@ export default function App() {
                       {canManage&&(
                         <div style={{display:"flex",gap:8}}>
                           {!w.claimed&&<button className="btn" onClick={()=>handleClaimWinner(w.id)} style={{flex:1,background:"rgba(52,211,153,0.12)",border:"1px solid rgba(52,211,153,0.25)",color:"#34d399",padding:"9px",fontSize:12}}>✅ Mark Claimed</button>}
-                          {w.claimed&&<button className="btn" onClick={()=>handleRemoveWinner(w.id)} style={{flex:1,background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.2)",color:"#f87171",padding:"9px",fontSize:12}}>🗑️ Remove</button>}
+                          {w.claimed&&<button className="btn" onClick={async()=>{try{await supabase.from("winners").update({claimed:false}).eq("id",w.id);}catch{}setWinners(prev=>prev.map(x=>x.id===w.id?{...x,claimed:false}:x));showToast("↩️ Marked unclaimed","warn");}} style={{flex:1,background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.25)",color:"#fbbf24",padding:"9px",fontSize:12}}>↩️ Unclaim</button>}
+                          <button className="btn" onClick={()=>handleRemoveWinner(w.id)} style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.2)",color:"#f87171",padding:"9px 12px",fontSize:12}}>🗑️</button>
                         </div>
                       )}
                     </div>
@@ -2301,7 +2333,7 @@ export default function App() {
             {[
               {label:"Role",key:"role",opts:["Leader","Elder","Member","Recruit"]},
               {label:"Class",key:"cls",opts:["Berserker","Skald","Warlord","Volva","Archer","RuneFighter"]},
-              {label:"Status",key:"status",opts:["Active","Offline"]},
+              {label:"Status",key:"status",opts:["Active","Away","Do Not Disturb","Offline"]},
             ].map(f=>(
               <div key={f.key} style={{marginBottom:14}}>
                 <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>{f.label}</label>
@@ -2335,7 +2367,7 @@ export default function App() {
             ))}
             {[
               {label:"Role",key:"role",opts:["Leader","Elder","Member","Recruit"]},
-              {label:"Status",key:"status",opts:["Active","Offline"]},
+              {label:"Status",key:"status",opts:["Active","Away","Do Not Disturb","Offline"]},
             ].map(f=>(
               <div key={f.key} style={{marginBottom:14}}>
                 <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>{f.label}</label>
@@ -2800,8 +2832,8 @@ function OverworldMapsPanel({ canManage }) {
 
 // ── Folkvang / Valhalla Dungeon Card (expandable, floors + modes) ─────────────
 function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, killFlash, onKill, onReset, onSetTimer, onImage }) {
-  const [expandedMode, setExpandedMode] = useState("interserver"); // "interserver" | "normal" | null
-  const [collapsed, setCollapsed] = useState(false);
+  const [expandedMode, setExpandedMode] = useState(null); // start with none expanded
+  const [collapsed, setCollapsed] = useState(true);
 
   const modes = [
     { key:"interserver", label:"INTER-SERVER", color:"#f87171", border:"rgba(248,113,113,0.35)", bg:"rgba(248,113,113,0.08)", bosses:folkvangInterserver },
@@ -2910,10 +2942,12 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, k
 }
 
 // ── Boss Group Panel (full page) ─────────────────────────────────────────────
-function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, killFlash, onKill, onReset, onSetTimer, onImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels }) {
+function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, killFlash, onKill, onReset, onSetTimer, onImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels, onRenameBoss }) {
   const bossNames = [...new Set(bosses.map(b=>b.name))];
   const [editRespawn, setEditRespawn] = useState(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
+  const [editingName, setEditingName] = useState(null); // bossName being edited
+  const [editNameVal, setEditNameVal] = useState("");
   const liveCount = bosses.filter(b=>b.secs===0).length;
 
   return(
@@ -2939,9 +2973,29 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, k
             return(
               <div key={bossName} style={{marginBottom:16}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                  <div style={{fontSize:12,fontWeight:700,color:"#94a3b8",letterSpacing:"0.04em"}}>
-                    {floorLabels ? `${templateBoss.floor} · ${bossName}` : bossName}
-                  </div>
+                  {canManage && editingName===bossName ? (
+                    <div style={{display:"flex",alignItems:"center",gap:6,flex:1}}>
+                      <input
+                        value={editNameVal}
+                        onChange={e=>setEditNameVal(e.target.value)}
+                        onKeyDown={e=>{
+                          if(e.key==="Enter"){onRenameBoss&&onRenameBoss(bossName,editNameVal);setEditingName(null);}
+                          if(e.key==="Escape")setEditingName(null);
+                        }}
+                        autoFocus
+                        style={{flex:1,background:"rgba(255,255,255,0.07)",border:`1px solid ${color}50`,borderRadius:7,padding:"4px 10px",color:"#e2e8f0",fontSize:12,fontFamily:"'Exo 2',sans-serif",fontWeight:700,outline:"none"}}
+                      />
+                      <button onClick={()=>{onRenameBoss&&onRenameBoss(bossName,editNameVal);setEditingName(null);}} style={{background:`${color}20`,border:`1px solid ${color}40`,color,borderRadius:5,padding:"3px 8px",cursor:"pointer",fontSize:11,fontFamily:"'Exo 2',sans-serif",fontWeight:700}}>✓</button>
+                      <button onClick={()=>setEditingName(null)} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",borderRadius:5,padding:"3px 8px",cursor:"pointer",fontSize:11}}>✕</button>
+                    </div>
+                  ) : (
+                    <div style={{display:"flex",alignItems:"center",gap:7}}>
+                      <div style={{fontSize:12,fontWeight:700,color:"#94a3b8",letterSpacing:"0.04em"}}>
+                        {floorLabels ? `${templateBoss.floor} · ${bossName}` : bossName}
+                      </div>
+                      {canManage&&<button onClick={()=>{setEditingName(bossName);setEditNameVal(bossName);}} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#3d5070",borderRadius:5,padding:"2px 6px",cursor:"pointer",fontSize:9.5,fontFamily:"'Exo 2',sans-serif"}}>✏️</button>}
+                    </div>
+                  )}
                   {canManage&&onAddChannel&&(
                     <button className="ghost-btn" onClick={()=>onAddChannel(bossName, templateBoss.color)}
                       style={{fontSize:10,padding:"3px 8px",color:"#60a5fa",borderColor:"rgba(96,165,250,0.3)"}}>
@@ -2960,11 +3014,11 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, k
 
                         {/* Compact top row: image + info + status */}
                         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-                          {/* Boss image — 78x78, clickable to upload */}
+                          {/* Boss image — 78x78, clickable by admin to upload */}
                           <div className="boss-img-upload" onClick={()=>canManage&&onImage(b.id)}
-                            style={{width:46,height:46,borderRadius:10,background:b.color+"22",border:`2px solid ${b.color}44`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0,position:"relative",cursor:canManage?"pointer":"default"}}>
-                            {b.image ? <img src={b.image} alt={b.name} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span style={{fontSize:20}}>👹</span>}
-                            {canManage&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",fontSize:12}} className="boss-img-ov">📷</div>}
+                            style={{width:78,height:78,borderRadius:10,background:b.color+"22",border:`2px solid ${b.color}44`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0,position:"relative",cursor:canManage?"pointer":"default"}}>
+                            {b.image ? <img src={b.image} alt={b.name} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span style={{fontSize:28}}>👹</span>}
+                            {canManage&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",fontSize:14}} className="boss-img-ov">📷 78×78</div>}
                           </div>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:11.5,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>CH {b.channel}</div>
