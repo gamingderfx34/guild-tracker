@@ -408,6 +408,7 @@ export default function App() {
         }));
       })
       .on("postgres_changes",{event:"DELETE",schema:"public",table:"auction_items"},(payload)=>{
+        // Item removed (e.g. winner announced) — remove from local list instantly
         setAuctionItems(prev=>prev.filter(item=>String(item.id)!==String(payload.old.id)));
       })
       .subscribe();
@@ -418,6 +419,11 @@ export default function App() {
       .on("postgres_changes",{event:"UPDATE",schema:"public",table:"members"},(payload)=>{
         const u = payload.new;
         setMembers(prev=>prev.map(m=>String(m.id)===String(u.id)?{...m,...u}:m));
+        // Keep currentUser in sync when their own profile is updated by admin
+        setCurrentUser(prev=>{
+          if(!prev || String(prev.id) !== String(u.id)) return prev;
+          return {...prev, points: u.points ?? prev.points, role: u.role ?? prev.role, name: u.name ?? prev.name};
+        });
       })
       .on("postgres_changes",{event:"DELETE",schema:"public",table:"members"},()=>{ loadMembers(); })
       .subscribe();
@@ -431,7 +437,21 @@ export default function App() {
 
     const winnersSub = supabase
       .channel("winners_rt")
-      .on("postgres_changes",{event:"*",schema:"public",table:"winners"},()=>{ loadWinners(); })
+      .on("postgres_changes",{event:"INSERT",schema:"public",table:"winners"},(payload)=>{
+        // Instantly add new winner for all clients without waiting for full reload
+        if(payload.new) {
+          setWinners(prev=>{
+            if(prev.find(w=>String(w.id)===String(payload.new.id))) return prev;
+            return [payload.new, ...prev];
+          });
+        }
+      })
+      .on("postgres_changes",{event:"UPDATE",schema:"public",table:"winners"},(payload)=>{
+        if(payload.new) setWinners(prev=>prev.map(w=>String(w.id)===String(payload.new.id)?{...w,...payload.new}:w));
+      })
+      .on("postgres_changes",{event:"DELETE",schema:"public",table:"winners"},(payload)=>{
+        if(payload.old) setWinners(prev=>prev.filter(w=>String(w.id)!==String(payload.old.id)));
+      })
       .subscribe();
 
     // Boss state realtime — syncs boss timers across all users
@@ -1203,22 +1223,29 @@ export default function App() {
     const updatedBids = [...(bidModal.bids||[]), newBid];
 
     // ── Points: deduct from new bidder, refund previous high bidder ───────────
+    // prevHighBidder = who was previously leading
+    // prevBidAmount  = how much they had locked in (the item's current bid)
     const prevHighBidder = bidModal.highBidder;
-    const prevBidAmount  = bidModal.currentBid || 0;
+    const prevBidAmount  = bidModal.currentBid || 0; // this is the amount locked by prevHighBidder
 
-    // 1) Deduct points from the new bidder
+    // 1) Deduct bid amount from the new bidder
     const myUpdatedPoints = myPoints - amount;
-    await supabase.from("members").update({points: myUpdatedPoints}).eq("id", myMember.id);
-    setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points: myUpdatedPoints} : m));
-    if(currentUser.id === myMember.id) setCurrentUser(prev=>({...prev, points: myUpdatedPoints}));
+    const { error: deductErr } = await supabase.from("members").update({points: myUpdatedPoints}).eq("id", myMember.id);
+    if (!deductErr) {
+      setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points: myUpdatedPoints} : m));
+      if(currentUser.id === myMember.id) setCurrentUser(prev=>({...prev, points: myUpdatedPoints}));
+    }
 
-    // 2) Refund the previous high bidder (if someone was outbid)
+    // 2) Refund the previous high bidder their exact locked-in bid amount
     if(prevHighBidder && prevHighBidder !== myName && prevBidAmount > 0) {
-      const prevMember = members.find(m=>m.name===prevHighBidder);
-      if(prevMember) {
-        const refundedPoints = (prevMember.points || 0) + prevBidAmount;
-        await supabase.from("members").update({points: refundedPoints}).eq("id", prevMember.id);
-        setMembers(prev=>prev.map(m=>m.id===prevMember.id ? {...m, points: refundedPoints} : m));
+      // Fetch fresh points from DB to avoid stale state
+      const { data: prevMemberData } = await supabase.from("members").select("id,points").eq("name", prevHighBidder).single();
+      if(prevMemberData) {
+        const refundedPoints = (prevMemberData.points || 0) + prevBidAmount;
+        await supabase.from("members").update({points: refundedPoints}).eq("id", prevMemberData.id);
+        setMembers(prev=>prev.map(m=>m.id===prevMemberData.id ? {...m, points: refundedPoints} : m));
+        // If the outbid person is the current user, update their session points too
+        if(currentUser.id === prevMemberData.id) setCurrentUser(prev=>({...prev, points: refundedPoints}));
       }
     }
     // ─────────────────────────────────────────────────────────────────────────
@@ -1231,10 +1258,19 @@ export default function App() {
     }).eq("id", bidModal.id);
     if(error) {
       showToast(`❌ Bid failed: ${error.message}`, "error");
-      // Rollback points on failure
+      // Rollback: restore new bidder's points
       await supabase.from("members").update({points: myPoints}).eq("id", myMember.id);
       setMembers(prev=>prev.map(m=>m.id===myMember.id ? {...m, points: myPoints} : m));
       if(currentUser.id === myMember.id) setCurrentUser(prev=>({...prev, points: myPoints}));
+      // Rollback: re-deduct refunded points from outbid member
+      if(prevHighBidder && prevHighBidder !== myName && prevBidAmount > 0) {
+        const { data: prevMemberData } = await supabase.from("members").select("id,points").eq("name", prevHighBidder).single();
+        if(prevMemberData) {
+          const reDeducted = Math.max(0, (prevMemberData.points || 0) - prevBidAmount);
+          await supabase.from("members").update({points: reDeducted}).eq("id", prevMemberData.id);
+          setMembers(prev=>prev.map(m=>m.id===prevMemberData.id ? {...m, points: reDeducted} : m));
+        }
+      }
       return;
     }
     // Optimistic local update so the bidder sees it instantly
@@ -1259,13 +1295,17 @@ export default function App() {
       created_at: new Date().toISOString(),
     };
     try {
+      // 1) Insert winner record
       const { error: wErr } = await supabase.from("winners").insert([w]);
       if(wErr) throw wErr;
-      const { error: lErr } = await supabase.from("auction_items")
-        .update({locked:true, winner:item.highBidder})
-        .eq("id", item.id);
-      if(lErr) throw lErr;
-      await loadAuctionItems();
+      // 2) Remove the auction item entirely (winner announced = auction done)
+      const { error: dErr } = await supabase.from("auction_items").delete().eq("id", item.id);
+      if(dErr) {
+        // Fallback: just lock it if delete fails
+        await supabase.from("auction_items").update({locked:true, winner:item.highBidder}).eq("id", item.id);
+      }
+      // Optimistic local update
+      setAuctionItems(prev=>prev.filter(i=>String(i.id)!==String(item.id)));
       await loadWinners();
     } catch(e) {
       console.error("Announce winner error:", e);
@@ -2945,7 +2985,7 @@ const BOSS_SCHEDULE = [
 const DAY_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 
 function BossSchedulePanel() {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true); // auto-collapsed by default — click to expand
   const [nowUTC8, setNowUTC8] = useState(()=>new Date(Date.now() + 8*3600000));
 
   useEffect(()=>{
