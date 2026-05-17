@@ -1400,7 +1400,7 @@ export default function App() {
                 {label:"Total Members", value:members.length,              icon:"👥", color:"#818cf8", glow:"rgba(129,140,248,0.15)"},
                 {label:"Online Now",    value:onlineCount,                  icon:"🟢", color:"#34d399", glow:"rgba(52,211,153,0.15)"},
                 {label:"Total Events",  value:totalEvents,                  icon:"📅", color:"#fbbf24", glow:"rgba(251,191,36,0.15)"},
-                {label:"Guild Points",  value:totalGuildPoints.toLocaleString(), icon:"🏆", color:"#f87171", glow:"rgba(248,113,113,0.15)"},
+				
               ].map(s=>(
                 <div key={s.label} className="stat-card"
                   style={{background:"linear-gradient(135deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"20px 22px",display:"flex",alignItems:"center",gap:15,position:"relative",overflow:"hidden"}}>
