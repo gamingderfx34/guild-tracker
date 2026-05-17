@@ -50,16 +50,38 @@ const DEFAULT_MYRKRHEIM = [
 ];
 
 // FOLKVANG floors: 1F-5F, Normal + Interserver
-const FOLKVANG_FLOORS = ["1F","2F","3F","4F","5F"];
-function mkFolkvang(type, color) {
-  return FOLKVANG_FLOORS.map((fl,i)=>({
-    id:`fv_${type}_${fl}`, name:`Folkvang ${fl}`, floor:fl, type, secs:0, elapsed:0,
-    respawnSecs:6300, // 1h45m default
-    channel:1, color, image:null, group:`folkvang_${type}`,
-  }));
+// Each floor has 4 bosses with their own timer
+const FOLKVANG_FLOORS = [
+  { floor:"1F", level:47 },
+  { floor:"2F", level:49 },
+  { floor:"3F", level:51 },
+  { floor:"4F", level:54 },
+  { floor:"5F", level:59 },
+];
+const FOLKVANG_BOSSES = [
+  { bossKey:"magic",    name:"Guardian of Magic Galdrbor",    color:"#a78bfa" },
+  { bossKey:"melody",   name:"Guardian of Melody Riosvar",    color:"#60a5fa" },
+  { bossKey:"balance",  name:"Guardian of Balance Javnos",    color:"#34d399" },
+  { bossKey:"strength", name:"Guardian of Strength Styrbjorn", color:"#f59e0b" },
+];
+function mkFolkvang(type) {
+  const arr = [];
+  FOLKVANG_FLOORS.forEach(({floor, level})=>{
+    FOLKVANG_BOSSES.forEach(({bossKey, name, color})=>{
+      arr.push({
+        id:`fv_${type}_${floor}_${bossKey}`,
+        name:`Lv.${level} ${name}`,
+        bossKey, floor, level, type,
+        secs:0, elapsed:0, respawnSecs:6300,
+        channel:1, color, image:null,
+        group:`folkvang_${type}`,
+      });
+    });
+  });
+  return arr;
 }
-const DEFAULT_FOLKVANG_NORMAL = mkFolkvang("normal","#f97316");
-const DEFAULT_FOLKVANG_INTERSERVER = mkFolkvang("interserver","#f87171");
+const DEFAULT_FOLKVANG_NORMAL = mkFolkvang("normal");
+const DEFAULT_FOLKVANG_INTERSERVER = mkFolkvang("interserver");
 
 // Canyon of Nidavellir — 3 bosses, interserver, 3 channels default
 const CANYON_BOSSES_DEF = [
@@ -3299,7 +3321,7 @@ function OverworldMapsPanel({ canManage }) {
 
 // ── Folkvang / Valhalla Dungeon Card (expandable, floors + modes) ─────────────
 function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, canTimer, killFlash, onKill, onReset, onSetTimer, onImage }) {
-  const [expandedMode, setExpandedMode] = useState(null); // start with none expanded
+  const [activeMode, setActiveMode] = useState("interserver");
   const [collapsed, setCollapsed] = useState(true);
 
   const modes = [
@@ -3310,6 +3332,22 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, c
   const allBosses = [...folkvangNormal, ...folkvangInterserver];
   const liveCount = allBosses.filter(b=>b.secs===0).length;
   const totalCount = allBosses.length;
+
+  const activeModeData = modes.find(m=>m.key===activeMode);
+  const activeBosses = activeModeData?.bosses || [];
+
+  // Group bosses by floor
+  const floorGroups = FOLKVANG_FLOORS.map(({floor, level})=>({
+    floor, level,
+    bosses: activeBosses.filter(b=>b.floor===floor),
+  }));
+
+  const BOSS_COLORS = {
+    magic:    "#a78bfa",
+    melody:   "#60a5fa",
+    balance:  "#34d399",
+    strength: "#f59e0b",
+  };
 
   return (
     <div style={{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(245,158,11,0.35)",borderRadius:18,overflow:"hidden",marginBottom:22,boxShadow:"0 0 40px rgba(245,158,11,0.06)"}}>
@@ -3335,73 +3373,119 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, c
       {!collapsed && (
         <div style={{padding:"16px 20px"}}>
           {/* Mode tabs */}
-          <div style={{display:"flex",gap:8,marginBottom:14}}>
+          <div style={{display:"flex",gap:8,marginBottom:18}}>
             {modes.map(mode=>(
               <button key={mode.key}
-                onClick={()=>setExpandedMode(expandedMode===mode.key?null:mode.key)}
+                onClick={()=>setActiveMode(mode.key)}
                 style={{
                   display:"flex",alignItems:"center",gap:7,
                   padding:"7px 16px",borderRadius:9,cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:700,fontSize:11.5,letterSpacing:"0.05em",
-                  background:expandedMode===mode.key?mode.bg:"rgba(255,255,255,0.04)",
-                  border:`1px solid ${expandedMode===mode.key?mode.border:"rgba(255,255,255,0.1)"}`,
-                  color:expandedMode===mode.key?mode.color:"#3d5070",
+                  background:activeMode===mode.key?mode.bg:"rgba(255,255,255,0.04)",
+                  border:`1px solid ${activeMode===mode.key?mode.border:"rgba(255,255,255,0.1)"}`,
+                  color:activeMode===mode.key?mode.color:"#3d5070",
                   transition:"all 0.18s",
                 }}>
-                <span style={{width:7,height:7,borderRadius:"50%",background:expandedMode===mode.key?mode.color:"#3d5070",flexShrink:0}} />
+                <span style={{width:7,height:7,borderRadius:"50%",background:activeMode===mode.key?mode.color:"#3d5070",flexShrink:0}} />
                 {mode.label}
                 <span style={{fontSize:9,opacity:0.7,fontWeight:400}}>5F</span>
               </button>
             ))}
           </div>
 
-          {/* Floor rows per active mode */}
-          {modes.map(mode=>{
-            if(expandedMode !== mode.key) return null;
-            return (
-              <div key={mode.key} style={{background:"rgba(255,255,255,0.02)",borderRadius:12,border:`1px solid ${mode.border}`,overflow:"hidden"}}>
-                <div style={{background:mode.bg,padding:"8px 16px",borderBottom:`1px solid ${mode.border}`,display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:11,fontWeight:700,color:mode.color,letterSpacing:"0.07em"}}>{mode.label}</span>
-                  <span style={{fontSize:10,color:"#3d5070"}}>· 5 Floors</span>
-                </div>
-                {mode.bosses.map((b,idx)=>{
-                  const st = bossStatus(b.secs);
-                  const bs = BOSS_STATUS_STYLE[st];
-                  const isLive = b.secs === 0;
-                  return (
-                    <div key={b.id} style={{
-                      display:"flex",alignItems:"center",gap:10,padding:"11px 16px",
-                      borderBottom:idx<mode.bosses.length-1?`1px solid rgba(255,255,255,0.04)`:"none",
-                      background:killFlash===b.id?"rgba(239,68,68,0.15)":"transparent",
-                      transition:"background 0.3s",
-                    }}>
-                      {/* Floor label */}
-                      <div style={{width:32,flexShrink:0,fontFamily:"'Rajdhani',sans-serif",fontSize:14,fontWeight:700,color:mode.color,textAlign:"center"}}>{b.floor}</div>
-                      {/* Status dot */}
-                      <div style={{width:8,height:8,borderRadius:"50%",background:isLive?"#34d399":"#f59e0b",boxShadow:isLive?"0 0 8px #34d399":"0 0 8px #f59e0b",flexShrink:0}} />
-                      {/* Timer */}
-                      <div style={{flex:1}}>
-                        <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:20,fontWeight:700,color:isLive?"#34d399":mode.color,letterSpacing:"0.04em"}}>{fmtSecs(b.secs)}</span>
-                        {isLive && b.elapsed>0 && <span style={{fontSize:9.5,color:"#34d399",marginLeft:8}}>+{fmtSecs(b.elapsed)}</span>}
-                      </div>
-                      {/* Status badge */}
-                      <span style={{display:"inline-flex",padding:"2px 8px",borderRadius:5,background:bs.bg,color:bs.color,border:`1px solid ${bs.border}`,fontSize:9.5,fontWeight:700,flexShrink:0}}>{st}</span>
-                      {/* Action buttons */}
-                      <div style={{display:"flex",gap:5,flexShrink:0}}>
-                        {canManage && <>
-                          <button className="ghost-btn" onClick={()=>onKill(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                            style={{fontSize:9.5,padding:"3px 8px",color:mode.color,borderColor:`${mode.color}40`}}>☠️ Kill</button>
-                          <button className="ghost-btn" onClick={()=>onReset(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                            style={{fontSize:9.5,padding:"3px 8px"}}>🔴 Live</button>
-                        </>}
-                        {(canManage||canTimer)&&<button className="ghost-btn" onClick={()=>onSetTimer(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                          style={{fontSize:9.5,padding:"3px 8px"}}>⏱</button>}
-                      </div>
+          {/* Floor panels */}
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {floorGroups.map(({floor, level, bosses})=>{
+              const floorLive = bosses.filter(b=>b.secs===0).length;
+              return (
+                <div key={floor} style={{
+                  background:"rgba(255,255,255,0.025)",
+                  border:`1px solid ${activeModeData.border}`,
+                  borderRadius:14,
+                  overflow:"hidden",
+                }}>
+                  {/* Floor header */}
+                  <div style={{
+                    display:"flex",alignItems:"center",justifyContent:"space-between",
+                    padding:"9px 16px",
+                    background:activeModeData.bg,
+                    borderBottom:`1px solid ${activeModeData.border}`,
+                  }}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:800,color:activeModeData.color,letterSpacing:"0.06em"}}>{floor}</span>
+                      <span style={{fontSize:10,color:"#3d5070"}}>·</span>
+                      <span style={{fontSize:10.5,color:"#64748b",fontWeight:600}}>Lv.{level} Guardians</span>
                     </div>
-                  );
-                })}
-              </div>
-            );
-          })}
+                    <span style={{fontSize:9.5,padding:"2px 8px",borderRadius:5,
+                      background:floorLive>0?"rgba(52,211,153,0.13)":"rgba(96,165,250,0.1)",
+                      border:floorLive>0?"1px solid rgba(52,211,153,0.3)":"1px solid rgba(96,165,250,0.25)",
+                      color:floorLive>0?"#34d399":"#60a5fa",
+                      fontWeight:700,letterSpacing:"0.05em",
+                    }}>{floorLive}/{bosses.length} LIVE</span>
+                  </div>
+
+                  {/* Boss rows inside this floor */}
+                  <div style={{display:"flex",flexDirection:"column"}}>
+                    {bosses.map((b, idx)=>{
+                      const st = bossStatus(b.secs);
+                      const bs = BOSS_STATUS_STYLE[st];
+                      const isLive = b.secs === 0;
+                      const bossColor = BOSS_COLORS[b.bossKey] || activeModeData.color;
+                      return (
+                        <div key={b.id} style={{
+                          display:"flex",alignItems:"center",gap:10,
+                          padding:"10px 16px",
+                          borderBottom:idx<bosses.length-1?`1px solid rgba(255,255,255,0.04)`:"none",
+                          background:killFlash===b.id?"rgba(239,68,68,0.15)":"transparent",
+                          transition:"background 0.3s",
+                        }}>
+                          {/* Boss color accent bar */}
+                          <div style={{width:3,height:32,borderRadius:3,background:bossColor,flexShrink:0}} />
+
+                          {/* Boss name */}
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:11,fontWeight:700,color:bossColor,letterSpacing:"0.02em",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                              {b.name}
+                            </div>
+                            {isLive && b.elapsed>0 && (
+                              <div style={{fontSize:9.5,color:"#34d399",marginTop:1}}>⏱ alive {fmtSecs(b.elapsed)}</div>
+                            )}
+                          </div>
+
+                          {/* Timer */}
+                          <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:20,fontWeight:700,
+                            color:isLive?"#34d399":bossColor,
+                            letterSpacing:"0.04em",flexShrink:0,minWidth:80,textAlign:"right",
+                          }}>
+                            {fmtSecs(b.secs)}
+                          </div>
+
+                          {/* Status badge */}
+                          <span style={{display:"inline-flex",padding:"2px 8px",borderRadius:5,
+                            background:bs.bg,color:bs.color,border:`1px solid ${bs.border}`,
+                            fontSize:9.5,fontWeight:700,flexShrink:0,minWidth:60,justifyContent:"center",
+                          }}>{st}</span>
+
+                          {/* Action buttons */}
+                          <div style={{display:"flex",gap:5,flexShrink:0}}>
+                            {canManage && <>
+                              <button className="ghost-btn" onClick={()=>onKill(b.id, `folkvang_${activeMode}`)}
+                                style={{fontSize:9.5,padding:"3px 8px",color:bossColor,borderColor:`${bossColor}40`}}>☠️</button>
+                              <button className="ghost-btn" onClick={()=>onReset(b.id, `folkvang_${activeMode}`)}
+                                style={{fontSize:9.5,padding:"3px 8px"}}>🔴</button>
+                            </>}
+                            {(canManage||canTimer)&&(
+                              <button className="ghost-btn" onClick={()=>onSetTimer(b.id, `folkvang_${activeMode}`)}
+                                style={{fontSize:9.5,padding:"3px 8px"}}>⏱</button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
