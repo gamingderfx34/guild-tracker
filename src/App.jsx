@@ -266,6 +266,9 @@ export default function App() {
   const [showWipeConfirm, setShowWipeConfirm] = useState(false);
   const [wipeLoading, setWipeLoading] = useState(false);
   const [bossImageModal, setBossImageModal] = useState(null);
+  const [bgImage, setBgImage]               = useState(()=>lsGet("rampageBgImage",""));
+  const [maintenanceMode, setMaintenanceMode] = useState(()=>lsGet("rampageMaintenance",false));
+  const [bossScheduleCollapsed, setBossScheduleCollapsed] = useState(true);
 
   // ── Events & Attendance ──────────────────────────────────────────────────
   const [events, setEvents]           = useState([]);
@@ -302,6 +305,8 @@ export default function App() {
   useEffect(()=>{ lsSet("rampageHilders", hildersBosses); }, [hildersBosses]);
   useEffect(()=>{ lsSet("rampageEventPoints", eventPoints); }, [eventPoints]);
   useEffect(()=>{ lsSet("rampageAttCodes", eventAttCodes); }, [eventAttCodes]);
+  useEffect(()=>{ lsSet("rampageBgImage", bgImage); }, [bgImage]);
+  useEffect(()=>{ lsSet("rampageMaintenance", maintenanceMode); }, [maintenanceMode]);
 
   // ── Sync boss timer with real time on load ────────────────────────────────
   useEffect(()=>{
@@ -491,7 +496,7 @@ export default function App() {
           const key = `outbid_${item.id}_${item.currentBid}`;
           setNotifications(prev=>{
             if(prev.find(n=>n.key===key)) return prev;
-            return [...prev, {key, type:"outbid", item:item.name, amount:item.currentBid, id:Date.now()}];
+            return [...prev, {key, type:"outbid", item:item.name, amount:item.currentBid, refund:myBid.amount, id:Date.now()}];
           });
         }
       }
@@ -1048,10 +1053,30 @@ export default function App() {
     if(!bidModal||isNaN(amount)) { showToast("❌ Enter a valid amount","error"); return; }
     if(amount <= bidModal.currentBid && bidModal.currentBid > 0) { showToast(`❌ Bid must exceed ${bidModal.currentBid.toLocaleString()} pts`,"error"); return; }
     if(amount < bidModal.minBid) { showToast(`❌ Minimum bid is ${bidModal.minBid.toLocaleString()} pts`,"error"); return; }
-    if(amount > myPoints) { showToast(`❌ Not enough points! You have ${myPoints.toLocaleString()} pts`,"error"); return; }
+    if(amount > myPoints) { showToast(`❌ Not enough points! You have ${myPoints.toLocaleString()} pts — need ${amount.toLocaleString()} pts to bid`,"error"); return; }
     const myName = currentUser?.name||"Guest";
     const newBid = {bidder:myName, amount, time:new Date().toLocaleTimeString()};
     const updatedBids = [...(bidModal.bids||[]), newBid];
+
+    // ── Refund previous high bidder if outbid ──────────────────────────────
+    const prevHighBidder = bidModal.highBidder;
+    const prevBidAmount  = bidModal.currentBid;
+    if(prevHighBidder && prevHighBidder !== myName && prevBidAmount > 0) {
+      const prevMember = members.find(m=>m.name===prevHighBidder);
+      if(prevMember) {
+        const refundedPoints = (prevMember.points||0) + prevBidAmount;
+        try { await supabase.from("members").update({points:refundedPoints}).eq("id",prevMember.id); } catch {}
+        setMembers(prev=>prev.map(m=>m.id===prevMember.id?{...m,points:refundedPoints}:m));
+      }
+    }
+
+    // ── Deduct points from current bidder ─────────────────────────────────
+    const newBidderPoints = myPoints - amount;
+    if(myMember) {
+      try { await supabase.from("members").update({points:newBidderPoints}).eq("id",myMember.id); } catch {}
+      setMembers(prev=>prev.map(m=>m.id===myMember.id?{...m,points:newBidderPoints}:m));
+    }
+
     // Real-time update via Supabase
     try {
       const { error } = await supabase.from("auction_items").update({
@@ -1067,8 +1092,9 @@ export default function App() {
         return {...item, currentBid:amount, highBidder:myName, bids:updatedBids};
       }));
     }
+    const savedName = bidModal.name;
     setBidModal(null); setBidAmount("");
-    showToast(`🏺 Bid of ${amount.toLocaleString()} pts placed on ${bidModal.name}!`);
+    showToast(`🏺 Bid of ${amount.toLocaleString()} pts placed on ${savedName}! ${prevHighBidder&&prevHighBidder!==myName?`↩️ ${prevHighBidder} refunded ${prevBidAmount.toLocaleString()} pts`:""}`);
   };
 
   const handleAnnounceWinner = async(item)=>{
@@ -1251,6 +1277,8 @@ export default function App() {
         .event-card:hover { border-color:rgba(255,255,255,0.12); transform:translateY(-2px); }
         .check-btn { width:28px; height:28px; border-radius:7px; cursor:pointer; border:none; font-size:14px; display:flex; align-items:center; justify-content:center; transition:all 0.15s; font-family:'Exo 2',sans-serif; }
         .check-btn:hover { transform:scale(1.15); filter:brightness(1.2); }
+        .collapse-arrow { transition:transform 0.35s cubic-bezier(0.4,0,0.2,1); display:inline-block; }
+        .collapse-panel { transition:max-height 0.45s cubic-bezier(0.4,0,0.2,1), opacity 0.35s; overflow:hidden; }
       `}</style>
 
       {/* Toast */}
@@ -1263,6 +1291,17 @@ export default function App() {
       )}
 
       <div style={{display:"flex",height:"100vh",background:"#06070e",fontFamily:"'Exo 2',sans-serif",color:"#e2e8f0",overflow:"hidden",position:"relative"}}>
+        {/* Background image overlay */}
+        {bgImage&&<div style={{position:"fixed",inset:0,backgroundImage:`url(${bgImage})`,backgroundSize:"cover",backgroundPosition:"center",backgroundRepeat:"no-repeat",opacity:0.13,zIndex:0,pointerEvents:"none"}} />}
+        {/* Maintenance mode screen for non-admins */}
+        {maintenanceMode&&!isSuperAdmin&&(
+          <div style={{position:"fixed",inset:0,background:"#06070e",zIndex:9999,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:18}}>
+            <div style={{fontSize:64,marginBottom:8}}>🔧</div>
+            <h2 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:32,fontWeight:700,color:"#fbbf24",letterSpacing:"0.1em"}}>UNDER MAINTENANCE</h2>
+            <p style={{color:"#3d5070",fontSize:14,maxWidth:380,textAlign:"center",lineHeight:1.7}}>The guild tracker is currently undergoing maintenance. Please check back soon. Contact your guild leader for updates.</p>
+            <button className="btn" onClick={handleLogout} style={{background:"rgba(248,113,113,0.15)",border:"1px solid rgba(248,113,113,0.35)",color:"#f87171",padding:"11px 28px",fontSize:13,marginTop:8}}>🚪 Sign Out</button>
+          </div>
+        )}
         {/* Glow bg */}
         <div style={{position:"fixed",top:-250,left:-150,width:700,height:700,background:"radial-gradient(circle,rgba(99,102,241,0.065),transparent 70%)",pointerEvents:"none",zIndex:0}} />
         <div style={{position:"fixed",bottom:-200,right:-100,width:600,height:600,background:"radial-gradient(circle,rgba(251,191,36,0.04),transparent 70%)",pointerEvents:"none",zIndex:0}} />
@@ -1379,20 +1418,30 @@ export default function App() {
 
           {/* ── DASHBOARD ── */}
           {activeNav==="dashboard"&&<div className="page">
-            {/* Field Boss Schedule on Dashboard */}
-            <div style={{background:"rgba(248,113,113,0.06)",border:"1px solid rgba(248,113,113,0.2)",borderRadius:16,padding:"16px 20px",marginBottom:18}}>
-              <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:15,fontWeight:700,color:"#f87171",marginBottom:10,letterSpacing:"0.04em"}}>👹 Field Boss Schedule (UTC+8)</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:8}}>
-                {FIELD_BOSS_SCHEDULE.map((b,i)=>{
-                  const isToday = b.days.includes(getDayName());
-                  return(
-                    <div key={i} style={{background:isToday?"rgba(248,113,113,0.08)":"rgba(255,255,255,0.02)",border:`1px solid ${isToday?"rgba(248,113,113,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:10,padding:"10px 13px"}}>
-                      <div style={{fontSize:12,fontWeight:700,color:isToday?"#f87171":"#e2e8f0"}}>{b.name}{isToday&&<span style={{marginLeft:8,fontSize:10,background:"rgba(248,113,113,0.2)",color:"#f87171",padding:"1px 6px",borderRadius:4}}>TODAY</span>}</div>
-                      <div style={{fontSize:10,color:"#3d5070",marginTop:2}}>{b.map}</div>
-                      <div style={{fontSize:10.5,color:"#60a5fa",marginTop:3}}>{b.days.join(", ")} · {b.time}</div>
-                    </div>
-                  );
-                })}
+            {/* Field Boss Schedule on Dashboard — collapsible */}
+            <div style={{background:"rgba(248,113,113,0.06)",border:"1px solid rgba(248,113,113,0.2)",borderRadius:16,marginBottom:18,overflow:"hidden"}}>
+              <button
+                onClick={()=>setBossScheduleCollapsed(p=>!p)}
+                style={{width:"100%",background:"none",border:"none",cursor:"pointer",padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:"'Exo 2',sans-serif"}}
+              >
+                <span style={{fontFamily:"'Rajdhani',sans-serif",fontSize:15,fontWeight:700,color:"#f87171",letterSpacing:"0.04em"}}>👹 Field Boss Schedule (UTC+8)</span>
+                <span style={{color:"#f87171",fontSize:16,transition:"transform 0.35s cubic-bezier(0.4,0,0.2,1)",display:"inline-block",transform:bossScheduleCollapsed?"rotate(0deg)":"rotate(180deg)"}}>▾</span>
+              </button>
+              <div style={{maxHeight:bossScheduleCollapsed?"0":"400px",overflow:"hidden",transition:"max-height 0.45s cubic-bezier(0.4,0,0.2,1)"}}>
+                <div style={{padding:"0 20px 16px"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:8}}>
+                    {FIELD_BOSS_SCHEDULE.map((b,i)=>{
+                      const isToday = b.days.includes(getDayName());
+                      return(
+                        <div key={i} style={{background:isToday?"rgba(248,113,113,0.08)":"rgba(255,255,255,0.02)",border:`1px solid ${isToday?"rgba(248,113,113,0.3)":"rgba(255,255,255,0.06)"}`,borderRadius:10,padding:"10px 13px"}}>
+                          <div style={{fontSize:12,fontWeight:700,color:isToday?"#f87171":"#e2e8f0"}}>{b.name}{isToday&&<span style={{marginLeft:8,fontSize:10,background:"rgba(248,113,113,0.2)",color:"#f87171",padding:"1px 6px",borderRadius:4}}>TODAY</span>}</div>
+                          <div style={{fontSize:10,color:"#3d5070",marginTop:2}}>{b.map}</div>
+                          <div style={{fontSize:10.5,color:"#60a5fa",marginTop:3}}>{b.days.join(", ")} · {b.time}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14,marginBottom:22}}>
@@ -1796,7 +1845,7 @@ export default function App() {
               {/* Outbid notifications panel */}
               {myBids.filter(i=>i.highBidder!==currentUser?.name&&i.bids.some(b=>b.bidder===currentUser?.name)).length>0&&(
                 <div style={{background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.3)",borderRadius:14,padding:"14px 20px",marginBottom:18}}>
-                  <div style={{fontSize:13,fontWeight:700,color:"#f87171",marginBottom:8}}>⚠️ You've Been Outbid!</div>
+                  <div style={{fontSize:13,fontWeight:700,color:"#f87171",marginBottom:8}}>⚠️ You've Been Outbid! <span style={{fontSize:11,color:"#34d399",fontWeight:600}}>↩️ Your bid was auto-refunded</span></div>
                   <div style={{display:"flex",flexDirection:"column",gap:6}}>
                     {myBids.filter(i=>i.highBidder!==currentUser?.name&&i.bids.some(b=>b.bidder===currentUser?.name)).map(i=>{
                       const myBid=i.bids.filter(b=>b.bidder===currentUser?.name).slice(-1)[0];
@@ -1805,6 +1854,7 @@ export default function App() {
                           <div>
                             <span style={{fontSize:12.5,fontWeight:700,color:"#e2e8f0"}}>{i.name}</span>
                             <span style={{fontSize:11,color:"#f87171",marginLeft:8}}>Your bid: {myBid?.amount?.toLocaleString()} pts</span>
+                            <span style={{fontSize:10,color:"#34d399",marginLeft:6}}>↩️ {myBid?.amount?.toLocaleString()} pts refunded</span>
                           </div>
                           <div style={{textAlign:"right"}}>
                             <div style={{fontSize:11,color:"#3d5070"}}>Current leader</div>
@@ -2087,6 +2137,55 @@ export default function App() {
                   )}
                 </div>
               </div>
+
+              {/* Background Image — Admin only */}
+              {isSuperAdmin&&(
+                <div style={{background:"rgba(99,102,241,0.06)",border:"1px solid rgba(99,102,241,0.2)",borderRadius:18,padding:"22px",gridColumn:"1/-1"}}>
+                  <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#a5b4fc",marginBottom:6,letterSpacing:"0.04em"}}>🖼️ Background Image <span style={{fontSize:10,color:"#6366f1",fontWeight:600,background:"rgba(99,102,241,0.15)",padding:"2px 7px",borderRadius:4,marginLeft:6}}>ADMIN ONLY</span></h3>
+                  <p style={{color:"#3d5070",fontSize:11.5,marginBottom:14,lineHeight:1.6}}>Set a custom background image for the guild tracker. The image will be applied as a subtle overlay for all members.</p>
+                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                    <input className="dark-input" placeholder="Paste image URL or upload below..."
+                      value={bgImage} onChange={e=>setBgImage(e.target.value)}
+                      style={{flex:1,minWidth:220}} />
+                    <label style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"11px 18px",borderRadius:10,cursor:"pointer",fontSize:13,fontWeight:700,fontFamily:"'Exo 2',sans-serif",whiteSpace:"nowrap"}}>
+                      📁 Upload
+                      <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>{
+                        const file=e.target.files?.[0]; if(!file) return;
+                        const reader=new FileReader();
+                        reader.onload=ev=>setBgImage(ev.target.result);
+                        reader.readAsDataURL(file);
+                        showToast("🖼️ Background image set!");
+                      }} />
+                    </label>
+                    {bgImage&&<button className="btn" onClick={()=>{setBgImage("");showToast("🗑️ Background removed","warn");}}
+                      style={{background:"rgba(248,113,113,0.12)",border:"1px solid rgba(248,113,113,0.25)",color:"#f87171",padding:"11px 16px",fontSize:12}}>✕ Remove</button>}
+                  </div>
+                  {bgImage&&<div style={{marginTop:12,borderRadius:10,overflow:"hidden",height:80,position:"relative"}}>
+                    <img src={bgImage} alt="bg preview" style={{width:"100%",height:"100%",objectFit:"cover",opacity:0.6}} onError={()=>{showToast("❌ Invalid image URL","error");setBgImage("");}} />
+                    <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:11,fontWeight:700}}>Preview</div>
+                  </div>}
+                </div>
+              )}
+
+              {/* Maintenance Mode — Admin only */}
+              {isSuperAdmin&&(
+                <div style={{background:maintenanceMode?"rgba(251,191,36,0.06)":"rgba(255,255,255,0.03)",border:`1px solid ${maintenanceMode?"rgba(251,191,36,0.25)":"rgba(255,255,255,0.07)"}`,borderRadius:18,padding:"22px",gridColumn:"1/-1"}}>
+                  <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:maintenanceMode?"#fbbf24":"#f1f5f9",marginBottom:6,letterSpacing:"0.04em"}}>🔧 Maintenance Mode <span style={{fontSize:10,color:"#f59e0b",fontWeight:600,background:"rgba(251,191,36,0.1)",padding:"2px 7px",borderRadius:4,marginLeft:6}}>ADMIN ONLY</span></h3>
+                  <p style={{color:"#3d5070",fontSize:11.5,marginBottom:16,lineHeight:1.6}}>When enabled, non-admin members will see a maintenance screen and cannot access the tracker. Only Admins bypass this.</p>
+                  <div style={{display:"flex",alignItems:"center",gap:14}}>
+                    <button className="btn" onClick={()=>{
+                      const next=!maintenanceMode;
+                      setMaintenanceMode(next);
+                      showToast(next?"🔧 Maintenance mode ENABLED — members are blocked":"✅ Maintenance mode DISABLED — app is live",next?"warn":"success");
+                    }} style={{background:maintenanceMode?"linear-gradient(135deg,#f59e0b,#d97706)":"rgba(255,255,255,0.06)",border:maintenanceMode?"none":"1px solid rgba(255,255,255,0.12)",color:maintenanceMode?"#0a0c18":"#64748b",padding:"12px 28px",fontSize:14,fontWeight:800,letterSpacing:"0.04em"}}>
+                      {maintenanceMode?"🔴 MAINTENANCE ON — Click to Disable":"⚫ Enable Maintenance Mode"}
+                    </button>
+                    {maintenanceMode&&<div style={{background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.25)",borderRadius:10,padding:"10px 16px",fontSize:12,color:"#fbbf24",lineHeight:1.5}}>
+                      ⚠️ Guild tracker is currently <strong>OFFLINE</strong> for members. You remain accessible as Admin.
+                    </div>}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2470,10 +2569,24 @@ export default function App() {
               </div>
             </div>
             <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.08em"}}>Your Bid Amount</label>
-            <input className="dark-input" type="number" placeholder={`Min ${bidModal.minBid.toLocaleString()} pts`} value={bidAmount} onChange={e=>setBidAmount(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleBid()} style={{marginBottom:20}} />
+            <input className="dark-input" type="number" placeholder={`Min ${bidModal.minBid.toLocaleString()} pts`} value={bidAmount} onChange={e=>setBidAmount(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleBid()} style={{marginBottom:8}} />
+            {/* Remaining points preview */}
+            {bidAmount&&!isNaN(parseInt(bidAmount))&&(()=>{
+              const amt=parseInt(bidAmount);
+              const remaining=myPoints-amt;
+              const insufficient=remaining<0;
+              return(
+                <div style={{marginBottom:14,padding:"8px 12px",borderRadius:9,background:insufficient?"rgba(248,113,113,0.1)":"rgba(52,211,153,0.07)",border:`1px solid ${insufficient?"rgba(248,113,113,0.3)":"rgba(52,211,153,0.2)"}`,fontSize:12,color:insufficient?"#f87171":"#34d399",display:"flex",justifyContent:"space-between"}}>
+                  <span>{insufficient?"❌ Insufficient points!":"✅ Remaining after bid:"}</span>
+                  <strong style={{fontFamily:"'Rajdhani',sans-serif",fontSize:14}}>{insufficient?"—":`${remaining.toLocaleString()} pts`}</strong>
+                </div>
+              );
+            })()}
             <div style={{display:"flex",gap:11}}>
               <button className="btn" onClick={()=>setBidModal(null)} style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",padding:"11px"}}>Cancel</button>
-              <button className="btn" onClick={handleBid} style={{flex:2,background:`linear-gradient(135deg,${(RARITY_STYLE[bidModal.rarity]||RARITY_STYLE.Common).color}40,${(RARITY_STYLE[bidModal.rarity]||RARITY_STYLE.Common).color}20)`,border:`1px solid ${(RARITY_STYLE[bidModal.rarity]||RARITY_STYLE.Common).color}60`,color:(RARITY_STYLE[bidModal.rarity]||RARITY_STYLE.Common).color,padding:"11px",fontSize:14}}>
+              <button className="btn" onClick={handleBid}
+                disabled={!!bidAmount&&!isNaN(parseInt(bidAmount))&&parseInt(bidAmount)>myPoints}
+                style={{flex:2,background:`linear-gradient(135deg,${(RARITY_STYLE[bidModal.rarity]||RARITY_STYLE.Common).color}40,${(RARITY_STYLE[bidModal.rarity]||RARITY_STYLE.Common).color}20)`,border:`1px solid ${(RARITY_STYLE[bidModal.rarity]||RARITY_STYLE.Common).color}60`,color:(RARITY_STYLE[bidModal.rarity]||RARITY_STYLE.Common).color,padding:"11px",fontSize:14,opacity:(!!bidAmount&&!isNaN(parseInt(bidAmount))&&parseInt(bidAmount)>myPoints)?0.5:1}}>
                 🏺 Place Bid
               </button>
             </div>
