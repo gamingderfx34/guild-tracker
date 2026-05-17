@@ -1511,7 +1511,7 @@ export default function App() {
               </h2>
               <p style={{color:"#3d5070",fontSize:12,marginTop:3}}>
                 {{
-                  dashboard:"Guild overview and live activity",
+                  dashboard:"Guild overview",
                   members:"Manage your full guild roster",
                   bosses:"Live countdown and respawn control",
                   events:"Track events and mark attendance",
@@ -1536,7 +1536,6 @@ export default function App() {
                 {label:"Total Members", value:members.length,              icon:"👥", color:"#818cf8", glow:"rgba(129,140,248,0.15)"},
                 {label:"Online Now",    value:activeCount,                  icon:"🟢", color:"#34d399", glow:"rgba(52,211,153,0.15)"},
                 {label:"Total Events",  value:totalEvents,                  icon:"📅", color:"#fbbf24", glow:"rgba(251,191,36,0.15)"},
-                {label:"Guild Points",  value:totalGuildPoints.toLocaleString(), icon:"🏆", color:"#f87171", glow:"rgba(248,113,113,0.15)"},
               ].map(s=>(
                 <div key={s.label} className="stat-card"
                   style={{background:"linear-gradient(135deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"20px 22px",display:"flex",alignItems:"center",gap:15,position:"relative",overflow:"hidden"}}>
@@ -1558,12 +1557,26 @@ export default function App() {
                 {role:"Elder",  count:elderCount,  max:MAX_ELDERS,  ...ROLE_STYLE.Elder},
                 {role:"Member", count:members.filter(m=>m.role==="Member").length,  max:null, ...ROLE_STYLE.Member},
                 {role:"Recruit",count:members.filter(m=>m.role==="Recruit").length, max:null, ...ROLE_STYLE.Recruit},
-              ].map(r=>(
-                <div key={r.role} style={{background:r.bg,border:`1px solid ${r.border}`,borderRadius:12,padding:"12px 16px",textAlign:"center"}}>
-                  <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:26,fontWeight:700,color:r.color}}>{r.count}{r.max?<span style={{fontSize:14,opacity:0.5}}>/{r.max}</span>:""}</div>
-                  <div style={{fontSize:10,color:r.color,opacity:0.8,letterSpacing:"0.08em"}}>{r.role.toUpperCase()}</div>
-                </div>
-              ))}
+              ].map(r=>{
+                const names = r.role==="Leader"
+                  ? members.filter(m=>m.role==="Leader").map(m=>m.name)
+                  : r.role==="Elder"
+                  ? members.filter(m=>m.role==="Elder").map(m=>m.name)
+                  : [];
+                return (
+                  <div key={r.role} style={{background:r.bg,border:`1px solid ${r.border}`,borderRadius:12,padding:"12px 16px",textAlign:"center"}}>
+                    <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:26,fontWeight:700,color:r.color}}>{r.count}{r.max?<span style={{fontSize:14,opacity:0.5}}>/{r.max}</span>:""}</div>
+                    <div style={{fontSize:10,color:r.color,opacity:0.8,letterSpacing:"0.08em"}}>{r.role==="Elder"&&elderCount!==1?"ELDERS":r.role.toUpperCase()}</div>
+                    {names.length>0&&(
+                      <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:2}}>
+                        {names.map(n=>(
+                          <div key={n} style={{fontSize:9.5,color:r.color,opacity:0.7,fontWeight:700,letterSpacing:"0.04em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             {/* ── BOSS SCHEDULE (dashboard) ── */}
@@ -1606,9 +1619,6 @@ export default function App() {
                 <span>⏱</span>
                 <span>Boss timers <strong>persist across sessions</strong> — they continue counting down even after refresh. Elapsed time shown when boss is LIVE.</span>
               </div>
-
-              {/* ── OVERWORLD MAPS ── */}
-              <OverworldMapsPanel canManage={canManage} />
 
               {/* ── FOLKVANG · VALHALLA DUNGEON ── */}
               <FolkvangDungeonCard
@@ -3111,7 +3121,7 @@ function OverworldMapsPanel({ canManage }) {
 // ── Folkvang / Valhalla Dungeon Card (expandable, floors + modes) ─────────────
 function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, killFlash, onKill, onReset, onSetTimer, onImage, onResume, isAdmin }) {
   const [expandedMode, setExpandedMode] = useState("interserver"); // "interserver" | "normal" | null
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const fileInputRef = useRef(null);
   const [pendingImgBoss, setPendingImgBoss] = useState(null);
 
@@ -3276,7 +3286,7 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, k
 function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, killFlash, onKill, onReset, onSetTimer, onImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels, isAdmin }) {
   const bossNames = [...new Set(bosses.map(b=>b.name))];
   const [editRespawn, setEditRespawn] = useState(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const liveCount = bosses.filter(b=>b.secs===0).length;
   const fileInputRef = useRef(null);
   const [pendingImgBoss, setPendingImgBoss] = useState(null);
