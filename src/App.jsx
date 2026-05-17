@@ -7,6 +7,9 @@ const SUPABASE_URL = "https://mbalsusqtkbtoxuawjau.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_174MDqsta2KNe3orpEN8Ww_0yzhHYaM"; // <-- replace this
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// ── App version — bump this to force users to reload cached bundles ──────────
+const APP_VERSION = "v2.1.0-boss-timer-fix";
+
 // ── Role display ─────────────────────────────────────────────────────────────
 // "Admin" is stored as role="Admin" in the members table (set manually in Supabase)
 function displayRole(user) {
@@ -275,6 +278,8 @@ export default function App() {
   const [alertEnabled, setAlertEnabled] = useState(()=>lsGet("rampageAlertEnabled",true));
   const alertedBossesRef = useRef(new Set());
   const audioCtxRef = useRef(null);
+  // Stable ref map for boss group setters — used inside real-time callbacks
+  const bossSettersRef = useRef({});
 
   // ── Events & Attendance ──────────────────────────────────────────────────
   const [events, setEvents]           = useState([]);
@@ -420,6 +425,17 @@ export default function App() {
   },[alertEnabled, alertSound, playBossAlert]);
 
   // ── Restore session on refresh ────────────────────────────────────────────
+  // ── Force reload when new version deployed ───────────────────────────────
+  useEffect(()=>{
+    const stored = localStorage.getItem("rampageAppVersion");
+    if (stored && stored !== APP_VERSION) {
+      localStorage.setItem("rampageAppVersion", APP_VERSION);
+      window.location.reload(true);
+    } else {
+      localStorage.setItem("rampageAppVersion", APP_VERSION);
+    }
+  }, []);
+
   const [sessionRestored, setSessionRestored] = useState(false);
   useEffect(()=>{
     let mounted = true;
@@ -459,6 +475,7 @@ export default function App() {
     loadEvents();
     loadWinners();
     loadSettings();
+    loadBossTimers();
   },[]);
 
   // ── Supabase real-time subscriptions ─────────────────────────────────────
@@ -504,15 +521,23 @@ export default function App() {
         const row = payload.new;
         if (!row) return;
         const { boss_id, group, secs, elapsed, image } = row;
-        const setter = getSetterByGroupStatic(group);
+        // Use ref so this closure always has the latest setters (never stale)
+        const setter = bossSettersRef.current[group] || bossSettersRef.current["live4"];
         if (setter) {
           setter(prev=>prev.map(b=>b.id===boss_id
-            ? { ...b, secs: secs ?? b.secs, elapsed: elapsed ?? b.elapsed, image: image !== undefined ? image : b.image }
+            ? { ...b,
+                secs:    secs    != null ? secs    : b.secs,
+                elapsed: elapsed != null ? elapsed : b.elapsed,
+                image:   image   != null ? image   : b.image,
+              }
             : b
           ));
         }
       })
       .subscribe();
+
+    // Periodic re-sync every 30s — catches any missed real-time events
+    const resyncInterval = setInterval(()=>{ loadBossTimers(); }, 30000);
 
     return ()=>{
       supabase.removeChannel(auctionSub);
@@ -521,6 +546,7 @@ export default function App() {
       supabase.removeChannel(winnersSub);
       supabase.removeChannel(settingsSub);
       supabase.removeChannel(bossTimersSub);
+      clearInterval(resyncInterval);
     };
   },[]);
 
@@ -599,6 +625,28 @@ export default function App() {
         });
       }
     } catch {}
+  };
+
+  // ── Load boss timers from Supabase on mount ─────────────────────────────
+  const loadBossTimers = async()=>{
+    try {
+      const { data, error } = await supabase.from("boss_timers").select("*");
+      if (error || !data) return;
+      data.forEach(row=>{
+        const { boss_id, group, secs, elapsed, image } = row;
+        const setter = bossSettersRef.current[group] || bossSettersRef.current["live4"];
+        if (setter) {
+          setter(prev=>prev.map(b=>b.id===boss_id
+            ? { ...b,
+                secs:    secs    != null ? secs    : b.secs,
+                elapsed: elapsed != null ? elapsed : b.elapsed,
+                image:   image   != null ? image   : b.image,
+              }
+            : b
+          ));
+        }
+      });
+    } catch(e) { console.warn("loadBossTimers error:", e); }
   };
 
   // Persist members locally as backup
@@ -774,6 +822,17 @@ export default function App() {
     if(group==="lindwurm") return setLindwurmBosses;
     if(group==="hilders") return setHildersBosses;
     return setBosses;
+  };
+
+  // Keep bossSettersRef always up to date so real-time callbacks always have correct setters
+  bossSettersRef.current = {
+    live4: setBosses,
+    myrkrheim: setMyrkrheimBosses,
+    folkvang_normal: setFolkvangNormal,
+    folkvang_interserver: setFolkvangInterserver,
+    canyon: setCanyonBosses,
+    lindwurm: setLindwurmBosses,
+    hilders: setHildersBosses,
   };
 
   // ── Boss actions ───────────────────────────────────────────────────────────
@@ -1522,6 +1581,7 @@ export default function App() {
               <span style={{fontSize:15}}>🚪</span>
               <span className="sidebar-label">Sign Out</span>
             </button>
+            {!collapsed&&<div style={{textAlign:"center",fontSize:9,color:"#1e2a3a",letterSpacing:"0.06em",paddingTop:4}}>{APP_VERSION}</div>}
           </div>
 
           {/* Collapse toggle */}
@@ -1695,6 +1755,7 @@ export default function App() {
                 folkvangNormal={folkvangNormal}
                 folkvangInterserver={folkvangInterserver}
                 canManage={canManage}
+                canTimer={true}
                 killFlash={killFlash}
                 onKill={(id,group)=>handleMarkKilledGroup(id,group)}
                 onReset={(id,group)=>handleResetToZero(id,group)}
@@ -1710,6 +1771,7 @@ export default function App() {
                 bosses={myrkrheimBosses}
                 groupKey="myrkrheim"
                 canManage={canManage}
+                canTimer={true}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"myrkrheim")}
                 onReset={(id)=>handleResetToZero(id,"myrkrheim")}
@@ -1729,6 +1791,7 @@ export default function App() {
                 bosses={bosses}
                 groupKey="live4"
                 canManage={canManage}
+                canTimer={true}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"live4")}
                 onReset={(id)=>handleResetToZero(id,"live4")}
@@ -1748,6 +1811,7 @@ export default function App() {
                 bosses={canyonBosses}
                 groupKey="canyon"
                 canManage={canManage}
+                canTimer={true}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"canyon")}
                 onReset={(id)=>handleResetToZero(id,"canyon")}
@@ -1768,6 +1832,7 @@ export default function App() {
                 bosses={lindwurmBosses}
                 groupKey="lindwurm"
                 canManage={canManage}
+                canTimer={true}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"lindwurm")}
                 onReset={(id)=>handleResetToZero(id,"lindwurm")}
@@ -1788,6 +1853,7 @@ export default function App() {
                 bosses={hildersBosses}
                 groupKey="hilders"
                 canManage={canManage}
+                canTimer={true}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"hilders")}
                 onReset={(id)=>handleResetToZero(id,"hilders")}
@@ -3154,7 +3220,7 @@ function OverworldMapsPanel({ canManage }) {
 }
 
 // ── Folkvang / Valhalla Dungeon Card (expandable, floors + modes) ─────────────
-function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, killFlash, onKill, onReset, onSetTimer, onImage }) {
+function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, canTimer, killFlash, onKill, onReset, onSetTimer, onImage }) {
   const [expandedMode, setExpandedMode] = useState(null); // start with none expanded
   const [collapsed, setCollapsed] = useState(true);
 
@@ -3242,16 +3308,16 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, k
                       {/* Status badge */}
                       <span style={{display:"inline-flex",padding:"2px 8px",borderRadius:5,background:bs.bg,color:bs.color,border:`1px solid ${bs.border}`,fontSize:9.5,fontWeight:700,flexShrink:0}}>{st}</span>
                       {/* Action buttons */}
-                      {canManage && (
-                        <div style={{display:"flex",gap:5,flexShrink:0}}>
+                      <div style={{display:"flex",gap:5,flexShrink:0}}>
+                        {canManage && <>
                           <button className="ghost-btn" onClick={()=>onKill(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
                             style={{fontSize:9.5,padding:"3px 8px",color:mode.color,borderColor:`${mode.color}40`}}>☠️ Kill</button>
                           <button className="ghost-btn" onClick={()=>onReset(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
                             style={{fontSize:9.5,padding:"3px 8px"}}>🔴 Live</button>
-                          <button className="ghost-btn" onClick={()=>onSetTimer(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
-                            style={{fontSize:9.5,padding:"3px 8px"}}>⏱</button>
-                        </div>
-                      )}
+                        </>}
+                        {(canManage||canTimer)&&<button className="ghost-btn" onClick={()=>onSetTimer(b.id, mode.key==="interserver"?"folkvang_interserver":"folkvang_normal")}
+                          style={{fontSize:9.5,padding:"3px 8px"}}>⏱</button>}
+                      </div>
                     </div>
                   );
                 })}
@@ -3265,7 +3331,7 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, k
 }
 
 // ── Boss Group Panel (full page) ─────────────────────────────────────────────
-function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, killFlash, onKill, onReset, onSetTimer, onImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels, onRenameBoss }) {
+function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, canTimer, killFlash, onKill, onReset, onSetTimer, onImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels, onRenameBoss }) {
   const bossNames = [...new Set(bosses.map(b=>b.name))];
   const [editRespawn, setEditRespawn] = useState(null);
   const [collapsed, setCollapsed] = useState(true);
@@ -3375,16 +3441,15 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, k
                           <RespawnEditor current={editRespawn.val} onSave={(secs)=>{onRespawnEdit(b.id,secs);setEditRespawn(null);}} onCancel={()=>setEditRespawn(null)} />
                         )}
 
-                        {canManage&&<>
+                        {canManage&&(
                           <button className="kill-btn" onClick={()=>onKill(b.id)} style={{background:`${b.color}20`,border:`1px solid ${b.color}45`,color:b.color,marginBottom:6,width:"100%",fontSize:11,padding:"7px"}}>
                             ☠️ Mark Killed
                           </button>
-                          <div style={{display:"flex",gap:6}}>
-                            <button className="ghost-btn" onClick={()=>onReset(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>🔴 LIVE</button>
-                            <button className="ghost-btn" onClick={()=>onSetTimer(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>⏱ Timer</button>
-                          </div>
-                        </>}
-                        {!canManage&&<div style={{textAlign:"center",color:"#3d5070",fontSize:9.5,marginTop:4,display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>👀 View only</div>}
+                        )}
+                        <div style={{display:"flex",gap:6}}>
+                          {canManage&&<button className="ghost-btn" onClick={()=>onReset(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>🔴 LIVE</button>}
+                          {(canManage||canTimer)&&<button className="ghost-btn" onClick={()=>onSetTimer(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>⏱ Timer</button>}
+                        </div>
                       </div>
                     );
                   })}
