@@ -255,8 +255,8 @@ export default function App() {
   const [members, setMembers]         = useState([]);
   const [bosses, setBosses]           = useState(()=>lsGet("rampageBosses", DEFAULT_BOSSES));
   const [myrkrheimBosses, setMyrkrheimBosses]       = useState(()=>lsGet("rampageMyrkrheim", DEFAULT_MYRKRHEIM));
-  const [folkvangNormal, setFolkvangNormal]         = useState(()=>lsGet("rampageFolkvangN", DEFAULT_FOLKVANG_NORMAL));
-  const [folkvangInterserver, setFolkvangInterserver] = useState(()=>lsGet("rampageFolkvangI", DEFAULT_FOLKVANG_INTERSERVER));
+  const [folkvangNormal, setFolkvangNormal] = useState(()=>{ const s=lsGet("rampageFolkvangN_v2",null); return (s&&s.length>0&&s[0].bossKey)?s:DEFAULT_FOLKVANG_NORMAL; });
+  const [folkvangInterserver, setFolkvangInterserver] = useState(()=>{ const s=lsGet("rampageFolkvangI_v2",null); return (s&&s.length>0&&s[0].bossKey)?s:DEFAULT_FOLKVANG_INTERSERVER; });
   const [canyonBosses, setCanyonBosses]             = useState(()=>lsGet("rampageCanyon", DEFAULT_CANYON));
   const [lindwurmBosses, setLindwurmBosses]         = useState(()=>lsGet("rampageLindwurm", DEFAULT_LINDWURM));
   const [hildersBosses, setHildersBosses]           = useState(()=>lsGet("rampageHilders", DEFAULT_HILDERS));
@@ -331,8 +331,8 @@ export default function App() {
   useEffect(()=>{ lsSet("rampageActiveNav", activeNav); }, [activeNav]);
   useEffect(()=>{ lsSet("rampageBosses", bosses); }, [bosses]);
   useEffect(()=>{ lsSet("rampageMyrkrheim", myrkrheimBosses); }, [myrkrheimBosses]);
-  useEffect(()=>{ lsSet("rampageFolkvangN", folkvangNormal); }, [folkvangNormal]);
-  useEffect(()=>{ lsSet("rampageFolkvangI", folkvangInterserver); }, [folkvangInterserver]);
+  useEffect(()=>{ lsSet("rampageFolkvangN_v2", folkvangNormal); }, [folkvangNormal]);
+  useEffect(()=>{ lsSet("rampageFolkvangI_v2", folkvangInterserver); }, [folkvangInterserver]);
   useEffect(()=>{ lsSet("rampageCanyon", canyonBosses); }, [canyonBosses]);
   useEffect(()=>{ lsSet("rampageLindwurm", lindwurmBosses); }, [lindwurmBosses]);
   useEffect(()=>{ lsSet("rampageHilders", hildersBosses); }, [hildersBosses]);
@@ -695,8 +695,8 @@ export default function App() {
     const allGroups = [
       { key:"live4",                bosses:lsGet("rampageBosses",        []) },
       { key:"myrkrheim",            bosses:lsGet("rampageMyrkrheim",     []) },
-      { key:"folkvang_normal",      bosses:lsGet("rampageFolkvangN",     []) },
-      { key:"folkvang_interserver", bosses:lsGet("rampageFolkvangI",     []) },
+      { key:"folkvang_normal",      bosses:lsGet("rampageFolkvangN_v2",[]) },
+      { key:"folkvang_interserver", bosses:lsGet("rampageFolkvangI_v2",[]) },
       { key:"canyon",               bosses:lsGet("rampageCanyon",        []) },
       { key:"lindwurm",             bosses:lsGet("rampageLindwurm",      []) },
       { key:"hilders",              bosses:lsGet("rampageHilders",       []) },
