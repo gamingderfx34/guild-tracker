@@ -8,7 +8,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_174MDqsta2KNe3orpEN8Ww_0yzhHYaM"; // <
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ── App version — bump this to force users to reload cached bundles ──────────
-const APP_VERSION = "v2.1.0-boss-timer-fix";
+const APP_VERSION = "v2.2.0-permissions-polish";
 
 // ── Role display ─────────────────────────────────────────────────────────────
 // "Admin" is stored as role="Admin" in the members table (set manually in Supabase)
@@ -974,8 +974,20 @@ export default function App() {
     setBossTimerModal(null);
   };
 
-  // Update respawn time for a boss
-  const handleSetRespawnTime = (id, group, secs)=>{
+  // Open timer modal pre-filled with current boss secs
+  const openTimerModal = (id, group) => {
+    const allBosses = {
+      live4: bosses, myrkrheim: myrkrheimBosses,
+      folkvang_normal: folkvangNormal, folkvang_interserver: folkvangInterserver,
+      canyon: canyonBosses, lindwurm: lindwurmBosses, hilders: hildersBosses,
+    };
+    const boss = (allBosses[group] || bosses).find(b=>b.id===id);
+    const secs = boss?.secs || 0;
+    setTimerHH(String(Math.floor(secs/3600)));
+    setTimerMM(String(Math.floor((secs%3600)/60)));
+    setTimerSS(String(secs%60));
+    setBossTimerModal({id, group});
+  };
     getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,respawnSecs:secs}:b));
   };
 
@@ -1503,10 +1515,14 @@ export default function App() {
   const onlineCount    = members.filter(m=>m.status!=="Offline").length;
   const leaderCount    = members.filter(m=>m.role==="Leader").length;
   const elderCount     = members.filter(m=>m.role==="Elder").length;
-  const isLeader       = currentUser?.role==="Leader" || currentUser?.role==="Admin";
-  const isAdmin        = currentUser && (currentUser.role==="Admin"||currentUser.role==="Leader"||currentUser.role==="Elder");
+  const isLeader       = currentUser?.role==="Admin";
+  const isAdmin        = currentUser?.role==="Admin";
   const isSuperAdmin   = currentUser?.role==="Admin";
-  const canManage      = currentUser && CAN_MANAGE(currentUser.role);
+  const canManage      = currentUser?.role==="Admin"; // Admin-only: full edit (delete, add members, promote to Leader+)
+  const canManageEvents  = ["Admin","Leader","Elder"].includes(currentUser?.role); // can create/manage events
+  const canManageBosses  = !!currentUser; // any logged-in user can kill/reset bosses
+  const canManageAuction = ["Admin","Leader","Elder"].includes(currentUser?.role); // can add/lock auction items
+  const canAssignRoles   = ["Admin","Leader","Elder"].includes(currentUser?.role); // can change roles (limited by role)
   const myPoints       = members.find(m=>m.name===currentUser?.name)?.points || 0;
   const myBids         = auctionItems.filter(i=>i.bids.some(b=>b.bidder===currentUser?.name));
   const totalGuildPoints = members.reduce((sum,m)=>sum+(m.points||0),0);
@@ -1570,8 +1586,7 @@ export default function App() {
         @keyframes modalIn { from{opacity:0;transform:scale(0.95) translateY(16px)} to{opacity:1;transform:scale(1) translateY(0)} }
         .page { animation:fadeIn 0.25s ease; }
         @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-        .logo-ring:hover .logo-ov { opacity:1!important; }
-        .logo-ring { cursor:pointer; }
+        .logo-ring { cursor:pointer; transition:transform 0.18s, box-shadow 0.18s; } .logo-ring:hover { transform:scale(1.07); box-shadow:0 0 32px rgba(251,191,36,0.35)!important; }
         .stat-card { transition:all 0.25s; }
         .stat-card:hover { transform:translateY(-3px); border-color:rgba(255,255,255,0.12)!important; }
         .notif-badge { animation:pulse 1.2s ease-in-out infinite; }
@@ -1622,18 +1637,16 @@ export default function App() {
 
           {/* Logo */}
           <div style={{padding:collapsed?"18px 0":"22px 20px 16px",display:"flex",alignItems:"center",gap:12,justifyContent:collapsed?"center":"flex-start",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
-            <div className="logo-ring" onClick={()=>fileRef.current?.click()}
+            <div className="logo-ring" onClick={()=>setActiveNav("dashboard")} title="Go to Dashboard"
               style={{width:50,height:50,borderRadius:"50%",border:"2px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.07)",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden",flexShrink:0,boxShadow:"0 0 24px rgba(251,191,36,0.18)"}}>
               <img src={logoUrl} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}} onError={()=>setLogoErr(true)} />
-              <div className="logo-ov" style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.65)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",borderRadius:"50%",fontSize:18}}>📷</div>
             </div>
             {!collapsed&&<div>
               <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:20,fontWeight:700,letterSpacing:"0.12em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>RAMPAGE</div>
               <div style={{fontSize:9.5,color:"#3d5070",letterSpacing:"0.1em"}}>GUILD TRACKER</div>
             </div>}
           </div>
-          <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={handleLogoUpload} />
-
+          
           {/* Current user */}
           <div style={{margin:"12px 9px 8px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:14,padding:collapsed?"12px 0":"13px 15px",display:"flex",alignItems:"center",gap:11,position:"relative",justifyContent:collapsed?"center":"flex-start"}}>
             {!collapsed&&<>
@@ -1797,7 +1810,7 @@ export default function App() {
                   <p style={{color:"#3d5070",fontSize:11,marginTop:1}}>{members.length} members</p>
                 </div>
               </div>
-              <MembersTable filtered={filtered} currentUser={currentUser} canManage={canManage} onEdit={setEditMember} onRemove={handleRemoveMember} onAddPoints={canManage?handleAddPoints:null} onChangeRole={canManage?handleChangeRole:null} />
+              <MembersTable filtered={filtered} currentUser={currentUser} canManage={canManage} onEdit={setEditMember} onRemove={handleRemoveMember} onAddPoints={canManage?handleAddPoints:null} onChangeRole={canAssignRoles?handleChangeRole:null} currentUserRole={currentUser?.role} />
             </div>
           </div>}
 
@@ -1816,7 +1829,7 @@ export default function App() {
                   </button>
                 )}
               </div>
-              <MembersTable filtered={filtered} currentUser={currentUser} canManage={canManage} onEdit={setEditMember} onRemove={handleRemoveMember} onAddPoints={canManage?handleAddPoints:null} onChangeRole={canManage?handleChangeRole:null} showFull />
+              <MembersTable filtered={filtered} currentUser={currentUser} canManage={canManage} onEdit={setEditMember} onRemove={handleRemoveMember} onAddPoints={canManage?handleAddPoints:null} onChangeRole={canAssignRoles?handleChangeRole:null} currentUserRole={currentUser?.role} showFull />
             </div>
           )}
 
@@ -1863,12 +1876,12 @@ export default function App() {
               <FolkvangDungeonCard
                 folkvangNormal={folkvangNormal}
                 folkvangInterserver={folkvangInterserver}
-                canManage={canManage}
+                canManage={canManageBosses}
                 canTimer={true}
                 killFlash={killFlash}
                 onKill={(id,group)=>handleMarkKilledGroup(id,group)}
                 onReset={(id,group)=>handleResetToZero(id,group)}
-                onSetTimer={(id,group)=>{setBossTimerModal({id,group});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
+                onSetTimer={(id,group)=>openTimerModal(id,group)}
                 onImage={(id,group)=>{setBossImageModal({id,group});bossImgRef.current?.click();}}
               />
 
@@ -1879,12 +1892,13 @@ export default function App() {
                 color="#818cf8"
                 bosses={myrkrheimBosses}
                 groupKey="myrkrheim"
-                canManage={canManage}
+                canManage={canManageBosses}
                 canTimer={true}
+                isAdmin={canManage}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"myrkrheim")}
                 onReset={(id)=>handleResetToZero(id,"myrkrheim")}
-                onSetTimer={(id)=>{setBossTimerModal({id,group:"myrkrheim"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
+                onSetTimer={(id)=>openTimerModal(id,"myrkrheim")}
                 onImage={(id)=>{setBossImageModal({id,group:"myrkrheim"});bossImgRef.current?.click();}}
                 onAddChannel={(bossName,color)=>handleAddChannel("myrkrheim",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"myrkrheim")}
@@ -1899,12 +1913,13 @@ export default function App() {
                 color="#f59e0b"
                 bosses={bosses}
                 groupKey="live4"
-                canManage={canManage}
+                canManage={canManageBosses}
                 canTimer={true}
+                isAdmin={canManage}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"live4")}
                 onReset={(id)=>handleResetToZero(id,"live4")}
-                onSetTimer={(id)=>{setBossTimerModal({id,group:"live4"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
+                onSetTimer={(id)=>openTimerModal(id,"live4")}
                 onImage={(id)=>{setBossImageModal({id,group:"live4"});bossImgRef.current?.click();}}
                 onAddChannel={(bossName,color)=>handleAddChannel("live4",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"live4")}
@@ -1919,12 +1934,13 @@ export default function App() {
                 color="#fb923c"
                 bosses={canyonBosses}
                 groupKey="canyon"
-                canManage={canManage}
+                canManage={canManageBosses}
                 canTimer={true}
+                isAdmin={canManage}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"canyon")}
                 onReset={(id)=>handleResetToZero(id,"canyon")}
-                onSetTimer={(id)=>{setBossTimerModal({id,group:"canyon"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
+                onSetTimer={(id)=>openTimerModal(id,"canyon")}
                 onImage={(id)=>{setBossImageModal({id,group:"canyon"});bossImgRef.current?.click();}}
                 onAddChannel={(bossName,color)=>handleAddChannel("canyon",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"canyon")}
@@ -1940,12 +1956,13 @@ export default function App() {
                 color="#4ade80"
                 bosses={lindwurmBosses}
                 groupKey="lindwurm"
-                canManage={canManage}
+                canManage={canManageBosses}
                 canTimer={true}
+                isAdmin={canManage}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"lindwurm")}
                 onReset={(id)=>handleResetToZero(id,"lindwurm")}
-                onSetTimer={(id)=>{setBossTimerModal({id,group:"lindwurm"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
+                onSetTimer={(id)=>openTimerModal(id,"lindwurm")}
                 onImage={(id)=>{setBossImageModal({id,group:"lindwurm"});bossImgRef.current?.click();}}
                 onAddChannel={(bossName,color)=>handleAddChannel("lindwurm",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"lindwurm")}
@@ -1961,12 +1978,13 @@ export default function App() {
                 color="#a78bfa"
                 bosses={hildersBosses}
                 groupKey="hilders"
-                canManage={canManage}
+                canManage={canManageBosses}
                 canTimer={true}
+                isAdmin={canManage}
                 killFlash={killFlash}
                 onKill={(id)=>handleMarkKilledGroup(id,"hilders")}
                 onReset={(id)=>handleResetToZero(id,"hilders")}
-                onSetTimer={(id)=>{setBossTimerModal({id,group:"hilders"});setTimerHH("0");setTimerMM("0");setTimerSS("0");}}
+                onSetTimer={(id)=>openTimerModal(id,"hilders")}
                 onImage={(id)=>{setBossImageModal({id,group:"hilders"});bossImgRef.current?.click();}}
                 onAddChannel={(bossName,color)=>handleAddChannel("hilders",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"hilders")}
@@ -1989,7 +2007,7 @@ export default function App() {
                     </div>
                   ))}
                 </div>
-                {canManage&&(
+                {canManageEvents&&(
                   <button className="btn" onClick={()=>setShowCreateEvent(true)}
                     style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"11px 20px",fontSize:13,boxShadow:"0 4px 20px rgba(99,102,241,0.3)"}}>
                     ➕ Create Event
@@ -2001,7 +2019,7 @@ export default function App() {
                 <div style={{textAlign:"center",padding:"60px 0",color:"#3d5070"}}>
                   <div style={{fontSize:40,marginBottom:12}}>📅</div>
                   <div style={{fontSize:16,fontWeight:700,marginBottom:6}}>No events yet</div>
-                  <div style={{fontSize:12}}>{canManage?"Click Create Event to add your first event":"Ask a Leader or Elder to create an event"}</div>
+                  <div style={{fontSize:12}}>{canManageEvents?"Click Create Event to add your first event":"Ask a Leader or Elder to create an event"}</div>
                 </div>
               )}
 
@@ -2035,24 +2053,24 @@ export default function App() {
                             <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:20,fontWeight:700,color:"#fbbf24"}}>+{ev.points}</div>
                             <div style={{fontSize:9.5,color:"#3d5070",letterSpacing:"0.07em"}}>PTS</div>
                           </div>
-                          {canManage&&(
+                          {canManageEvents&&(
                             <div style={{display:"flex",gap:6}}>
                               <button className="btn" onClick={()=>setMarkEventId(isMarking?null:ev.id)}
                                 style={{background:isMarking?"rgba(99,102,241,0.2)":"rgba(255,255,255,0.06)",border:`1px solid ${isMarking?"rgba(99,102,241,0.4)":"rgba(255,255,255,0.1)"}`,color:isMarking?"#a5b4fc":"#64748b",padding:"8px 14px",fontSize:12}}>
                                 {isMarking?"✅ Done":"📋 Mark"}
                               </button>
-                              <button className="btn" onClick={()=>{setShowAttCodeModal(ev.id);setGeneratedCode("");}}
+                              {canManage&&<button className="btn" onClick={()=>{setShowAttCodeModal(ev.id);setGeneratedCode("");}}
                                 style={{background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.3)",color:"#fbbf24",padding:"8px 12px",fontSize:12}}
                                 title="Generate attendance verification code">
                                 🔑
-                              </button>
-                              <button className="btn" onClick={()=>handleDeleteEvent(ev.id)}
+                              </button>}
+                              {canManage&&<button className="btn" onClick={()=>handleDeleteEvent(ev.id)}
                                 style={{background:"rgba(248,113,113,0.08)",border:"1px solid rgba(248,113,113,0.2)",color:"#f87171",padding:"8px 10px",fontSize:12}}>
                                 🗑️
-                              </button>
+                              </button>}
                             </div>
                           )}
-                          {!canManage&&(
+                          {!isMarking&&(
                             <button className="btn" onClick={()=>setShowMemberAttModal({eventId:ev.id,event:ev})}
                               style={{background:ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"rgba(52,211,153,0.12)":"rgba(99,102,241,0.15)",border:`1px solid ${ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"rgba(52,211,153,0.35)":"rgba(99,102,241,0.35)"}`,color:ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"#34d399":"#a5b4fc",padding:"8px 14px",fontSize:12,fontWeight:700}}>
                               {ev.attendance?.[members.find(m=>m.name===currentUser?.name)?.id]?"✅ Checked In":"📲 Check In"}
@@ -2182,7 +2200,7 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-                {isAdmin&&(
+                {canManageAuction&&(
                   <button className="btn" onClick={()=>{setAuctionForm({name:"",rarity:"Epic",minBid:1000,durationHours:24,image:null,imageUrl:""});setShowAddAuction(true);}}
                     style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"10px 18px",fontSize:13,boxShadow:"0 4px 20px rgba(99,102,241,0.3)"}}>
                     ➕ Add Item
@@ -2306,15 +2324,15 @@ export default function App() {
                           style={{flex:1,minWidth:100,background:canBid?`linear-gradient(135deg,${rs.color}30,${rs.color}15)`:"rgba(255,255,255,0.04)",border:`1px solid ${canBid?rs.color+"50":"rgba(255,255,255,0.1)"}`,color:canBid?rs.color:"#3d5070",padding:"10px",fontSize:13,opacity:canBid?1:0.7}}>
                           {currentUser?.role==="Recruit"?"🔒 7-Day Wait":"🏺 Place Bid"}
                         </button>}
-                        {isAdmin&&!item.locked&&item.highBidder&&(
+                        {canManageAuction&&!item.locked&&item.highBidder&&(
                           <button className="btn" onClick={()=>handleAnnounceWinner(item)}
                             style={{background:"rgba(251,191,36,0.12)",border:"1px solid rgba(251,191,36,0.3)",color:"#fbbf24",padding:"10px 14px",fontSize:12}}>🏆 End</button>
                         )}
-                        {isAdmin&&!item.locked&&(
+                        {canManageAuction&&!item.locked&&(
                           <button className="btn" onClick={()=>setEditAuction({...item})}
                             style={{background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.25)",color:"#60a5fa",padding:"10px 12px",fontSize:12}}>✏️</button>
                         )}
-                        {isAdmin&&!item.locked&&(
+                        {canManageAuction&&!item.locked&&(
                           <button className="btn" onClick={()=>handleDeleteAuctionItem(item.id)}
                             style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.2)",color:"#f87171",padding:"10px 12px",fontSize:12}}>🗑️</button>
                         )}
@@ -3068,7 +3086,7 @@ export default function App() {
 }
 
 // ── Members Table ─────────────────────────────────────────────────────────────
-function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAddPoints, onChangeRole, showFull }) {
+function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAddPoints, onChangeRole, currentUserRole, showFull }) {
   const [editPointsId, setEditPointsId] = useState(null);
   const [pointsDelta, setPointsDelta] = useState("");
 
@@ -3088,8 +3106,8 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
             <th style={{...TH,color:"#a78bfa"}}>Role</th>
             <th style={{...TH,color:"#fbbf24"}}>Points</th>
             <th style={TH}>Status</th>
-            {canManage&&<th style={TH}>Actions</th>}
-            {!canManage&&<th style={TH} />}
+            {(canManage||onChangeRole)&&<th style={TH}>Actions</th>}
+            {!(canManage||onChangeRole)&&<th style={TH} />}
           </tr>
         </thead>
         <tbody>
@@ -3107,14 +3125,24 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
                 </td>
                 <td style={{padding:"13px 18px",color:"#64748b",fontSize:12.5}}>{m.cls||"—"}</td>
                 <td style={{padding:"13px 18px"}}>
-                  {canManage && onChangeRole && m.role !== "Admin" && m.id !== currentUser?.id ? (
-                    <select
-                      value={m.role}
-                      onChange={e=>onChangeRole(m.id, e.target.value)}
-                      style={{background:rs.bg,color:rs.color,border:`1px solid ${rs.border}`,borderRadius:7,padding:"4px 8px",fontSize:10.5,fontWeight:700,cursor:"pointer",fontFamily:"'Exo 2',sans-serif",outline:"none"}}>
-                      {ASSIGNABLE_ROLES.map(r=><option key={r} value={r} style={{background:"#0a0c18"}}>{r}</option>)}
-                    </select>
-                  ) : (
+                  {onChangeRole && m.role !== "Admin" && m.id !== currentUser?.id ? (() => {
+                    // Admin: full role list. Leader/Elder: Member+Recruit only
+                    const allowedRoles = currentUserRole === "Admin"
+                      ? ["Leader","Elder","Member","Recruit"]
+                      : ["Member","Recruit"];
+                    // Don't show dropdown if target's role is higher than what caller can assign
+                    const canEditThisRole = currentUserRole === "Admin" || ["Member","Recruit"].includes(m.role);
+                    return canEditThisRole ? (
+                      <select
+                        value={m.role}
+                        onChange={e=>onChangeRole(m.id, e.target.value)}
+                        style={{background:rs.bg,color:rs.color,border:`1px solid ${rs.border}`,borderRadius:7,padding:"4px 8px",fontSize:10.5,fontWeight:700,cursor:"pointer",fontFamily:"'Exo 2',sans-serif",outline:"none"}}>
+                        {allowedRoles.map(r=><option key={r} value={r} style={{background:"#0a0c18"}}>{r}</option>)}
+                      </select>
+                    ) : (
+                      <span style={{display:"inline-flex",padding:"4px 11px",borderRadius:7,background:rs.bg,color:rs.color,border:`1px solid ${rs.border}`,fontSize:10.5,fontWeight:700,letterSpacing:"0.04em"}}>{m.role}</span>
+                    );
+                  })() : (
                     <span style={{display:"inline-flex",padding:"4px 11px",borderRadius:7,background:rs.bg,color:rs.color,border:`1px solid ${rs.border}`,fontSize:10.5,fontWeight:700,letterSpacing:"0.04em"}}>{m.role}</span>
                   )}
                 </td>
@@ -3151,15 +3179,19 @@ function MembersTable({ filtered, currentUser, canManage, onEdit, onRemove, onAd
                     <span style={{width:6,height:6,borderRadius:"50%",background:ss.dot,flexShrink:0}} />{m.status}
                   </span>
                 </td>
-                {canManage&&(
+                {(canManage || (onChangeRole && ["Member","Recruit"].includes(m.role) && m.id !== currentUser?.id)) ? (
                   <td style={{padding:"13px 18px"}}>
                     <div style={{display:"flex",gap:6}}>
-                      <button className="ghost-btn" onClick={()=>onEdit(m)}>✏️</button>
-                      {m.role!=="Leader"&&m.role!=="Admin"&&<button className="ghost-btn" onClick={()=>onRemove(m.id)} style={{color:"#f87171"}}>🗑️</button>}
+                      {canManage && <button className="ghost-btn" onClick={()=>onEdit(m)}>✏️</button>}
+                      {(canManage
+                        ? m.role!=="Leader"&&m.role!=="Admin"
+                        : ["Member","Recruit"].includes(m.role)
+                       ) && <button className="ghost-btn" onClick={()=>onRemove(m.id)} style={{color:"#f87171"}}>🗑️</button>}
                     </div>
                   </td>
+                ) : (
+                  <td style={{padding:"13px 18px"}} />
                 )}
-                {!canManage&&<td style={{padding:"13px 18px"}} />}
               </tr>
             );
           })}
@@ -3524,7 +3556,7 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, c
 }
 
 // ── Boss Group Panel (full page) ─────────────────────────────────────────────
-function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, canTimer, killFlash, onKill, onReset, onSetTimer, onImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels, onRenameBoss }) {
+function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, canTimer, isAdmin, killFlash, onKill, onReset, onSetTimer, onImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels, onRenameBoss }) {
   const bossNames = [...new Set(bosses.map(b=>b.name))];
   const [editRespawn, setEditRespawn] = useState(null);
   const [collapsed, setCollapsed] = useState(true);
@@ -3575,7 +3607,7 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, c
             return(
               <div key={bossName} style={{marginBottom:16}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-                  {canManage && editingName===bossName ? (
+                  {isAdmin && editingName===bossName ? (
                     <div style={{display:"flex",alignItems:"center",gap:6,flex:1}}>
                       <input
                         value={editNameVal}
@@ -3595,10 +3627,10 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, c
                       <div style={{fontSize:12,fontWeight:700,color:"#94a3b8",letterSpacing:"0.04em"}}>
                         {floorLabels ? `${templateBoss.floor} · ${bossName}` : bossName}
                       </div>
-                      {canManage&&<button onClick={()=>{setEditingName(bossName);setEditNameVal(bossName);}} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#3d5070",borderRadius:5,padding:"2px 6px",cursor:"pointer",fontSize:9.5,fontFamily:"'Exo 2',sans-serif"}}>✏️</button>}
+                      {isAdmin&&<button onClick={()=>{setEditingName(bossName);setEditNameVal(bossName);}} style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#3d5070",borderRadius:5,padding:"2px 6px",cursor:"pointer",fontSize:9.5,fontFamily:"'Exo 2',sans-serif"}}>✏️</button>}
                     </div>
                   )}
-                  {canManage&&onAddChannel&&(
+                  {isAdmin&&onAddChannel&&(
                     <button className="ghost-btn" onClick={()=>onAddChannel(bossName, templateBoss.color)}
                       style={{fontSize:10,padding:"3px 8px",color:"#60a5fa",borderColor:"rgba(96,165,250,0.3)"}}>
                       ➕ CH
@@ -3617,10 +3649,10 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, c
                         {/* Compact top row: image + info + status */}
                         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
                           {/* Boss image — 78x78, clickable by admin to upload */}
-                          <div className="boss-img-upload" onClick={()=>canManage&&onImage(b.id)}
-                            style={{width:78,height:78,borderRadius:10,background:b.color+"22",border:`2px solid ${b.color}44`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0,position:"relative",cursor:canManage?"pointer":"default"}}>
+                          <div className="boss-img-upload" onClick={()=>isAdmin&&onImage(b.id)}
+                            style={{width:78,height:78,borderRadius:10,background:b.color+"22",border:`2px solid ${b.color}44`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0,position:"relative",cursor:isAdmin?"pointer":"default"}}>
                             {b.image ? <img src={b.image} alt={b.name} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span style={{fontSize:28}}>👹</span>}
-                            {canManage&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",fontSize:14}} className="boss-img-ov">📷 78×78</div>}
+                            {isAdmin&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",fontSize:14}} className="boss-img-ov">📷 78×78</div>}
                           </div>
                           <div style={{flex:1,minWidth:0}}>
                             <div style={{fontSize:11.5,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>CH {b.channel}</div>
@@ -3630,7 +3662,7 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, c
                           <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:28,fontWeight:700,color:b.color,letterSpacing:"0.04em",lineHeight:1,flexShrink:0,textAlign:"right"}}>
                             {fmtSecs(b.secs)}
                           </div>
-                          {canManage&&onRemoveChannel&&bossChannels.length>1&&(
+                          {isAdmin&&onRemoveChannel&&bossChannels.length>1&&(
                             <button onClick={()=>onRemoveChannel(b.id)} style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.2)",color:"#f87171",borderRadius:6,padding:"3px 6px",cursor:"pointer",fontSize:10,fontFamily:"'Exo 2',sans-serif",fontWeight:700,flexShrink:0}}>✕</button>
                           )}
                         </div>
@@ -3643,7 +3675,7 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, c
                         {showRespawnEdit&&b.respawnSecs!=null&&(
                           <div style={{background:"rgba(255,255,255,0.03)",borderRadius:7,padding:"4px 8px",marginBottom:7,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                             <span style={{fontSize:9.5,color:"#3d5070"}}>Respawn: {String(Math.floor((b.respawnSecs||0)/3600)).padStart(2,"0")}:{String(Math.floor(((b.respawnSecs||0)%3600)/60)).padStart(2,"0")}:{String((b.respawnSecs||0)%60).padStart(2,"0")}</span>
-                            {canManage&&(
+                            {isAdmin&&(
                               <button onClick={()=>setEditRespawn({id:b.id,val:b.respawnSecs})}
                                 style={{fontSize:9,color:"#60a5fa",background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.2)",borderRadius:4,padding:"1px 6px",cursor:"pointer",fontFamily:"'Exo 2',sans-serif",fontWeight:600}}>✏️</button>
                             )}
@@ -3654,14 +3686,14 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, c
                           <RespawnEditor current={editRespawn.val} onSave={(secs)=>{onRespawnEdit(b.id,secs);setEditRespawn(null);}} onCancel={()=>setEditRespawn(null)} />
                         )}
 
-                        {canManage&&(
+                        {(canManage||canTimer)&&(
                           <button className="kill-btn" onClick={()=>onKill(b.id)} style={{background:`${b.color}20`,border:`1px solid ${b.color}45`,color:b.color,marginBottom:6,width:"100%",fontSize:11,padding:"7px"}}>
                             ☠️ Mark Killed
                           </button>
                         )}
                         <div style={{display:"flex",gap:6}}>
                           {canManage&&<button className="ghost-btn" onClick={()=>onReset(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>🔴 LIVE</button>}
-                          {(canManage||canTimer)&&<button className="ghost-btn" onClick={()=>onSetTimer(b.id)} style={{flex:1,fontSize:10,padding:"4px 5px"}}>⏱ Timer</button>}
+                          <button className="ghost-btn" onClick={()=>onSetTimer(b.id)} style={{flex:canManage?1:2,fontSize:10,padding:"4px 5px",color:"#60a5fa",borderColor:"rgba(96,165,250,0.25)"}}>⏱ Set Timer</button>
                         </div>
                       </div>
                     );
