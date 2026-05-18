@@ -8,7 +8,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_174MDqsta2KNe3orpEN8Ww_0yzhHYaM"; // <
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ── App version — bump this to force users to reload cached bundles ──────────
-const APP_VERSION = "v2.3.0-crash-fix";
+const APP_VERSION = "v2.5.0-image-sync-fix";
 
 // ── Role display ─────────────────────────────────────────────────────────────
 // "Admin" is stored as role="Admin" in the members table (set manually in Supabase)
@@ -577,21 +577,26 @@ function AppInner() {
       .on("postgres_changes",{event:"*",schema:"public",table:"settings"},()=>{ loadSettings(); })
       .subscribe();
 
-    // Boss timers real-time — so all users see timer updates instantly
+    // Boss timers real-time — so all users see timer/image updates instantly
     const bossTimersSub = supabase
       .channel("boss_timers_rt")
       .on("postgres_changes",{event:"*",schema:"public",table:"boss_timers"},(payload)=>{
         const row = payload.new;
         if (!row) return;
         const { boss_id, group, secs, elapsed, image } = row;
-        // Use ref so this closure always has the latest setters (never stale)
-        const setter = bossSettersRef.current[group] || bossSettersRef.current["live4"];
+        const rtSetterMap = {
+          live4: setBosses, myrkrheim: setMyrkrheimBosses,
+          folkvang_normal: setFolkvangNormal, folkvang_interserver: setFolkvangInterserver,
+          canyon: setCanyonBosses, lindwurm: setLindwurmBosses, hilders: setHildersBosses,
+        };
+        const setter = rtSetterMap[group];
         if (setter) {
           setter(prev=>prev.map(b=>b.id===boss_id
             ? { ...b,
-                secs:    secs    != null ? secs    : b.secs,
-                elapsed: elapsed != null ? elapsed : b.elapsed,
-                image:   image   != null ? image   : b.image,
+                secs:         secs         != null ? secs         : b.secs,
+                elapsed:      elapsed      != null ? elapsed      : b.elapsed,
+                image:        image        ?         image        : b.image,
+                channelLabel: row.channel_label != null ? row.channel_label : b.channelLabel,
               }
             : b
           ));
@@ -709,27 +714,50 @@ function AppInner() {
     try {
       const { data, error } = await supabase.from("boss_timers").select("*");
       if (error || !data) return;
-      data.forEach(row=>{
-        const { boss_id, group, secs, elapsed, image } = row;
-        const setter = bossSettersRef.current[group] || bossSettersRef.current["live4"];
-        if (setter) {
-          setter(prev=>prev.map(b=>b.id===boss_id
-            ? { ...b,
-                secs:    secs    != null ? secs    : b.secs,
-                elapsed: elapsed != null ? elapsed : b.elapsed,
-                // Always apply image from DB — even if local has one, DB is source of truth
-                image:   image   || b.image,
-              }
-            : b
-          ));
-        }
+
+      // Build a map of setter functions directly (not via ref — avoids timing issues)
+      const setterMap = {
+        live4: setBosses,
+        myrkrheim: setMyrkrheimBosses,
+        folkvang_normal: setFolkvangNormal,
+        folkvang_interserver: setFolkvangInterserver,
+        canyon: setCanyonBosses,
+        lindwurm: setLindwurmBosses,
+        hilders: setHildersBosses,
+      };
+
+      // Group rows by boss group so we do one setState per group (not one per row)
+      const byGroup = {};
+      data.forEach(row => {
+        if (!byGroup[row.group]) byGroup[row.group] = [];
+        byGroup[row.group].push(row);
+      });
+
+      Object.entries(byGroup).forEach(([grp, rows]) => {
+        const setter = setterMap[grp];
+        if (!setter) return;
+        setter(prev => {
+          let updated = [...prev];
+          rows.forEach(row => {
+            updated = updated.map(b => {
+              if (b.id !== row.boss_id) return b;
+              return {
+                ...b,
+                secs:    row.secs    != null ? row.secs    : b.secs,
+                elapsed: row.elapsed != null ? row.elapsed : b.elapsed,
+                // Always use DB image as source of truth — overrides local cache
+                image:   row.image   ? row.image           : b.image,
+                channelLabel: row.channel_label ? row.channel_label : b.channelLabel,
+              };
+            });
+          });
+          return updated;
+        });
       });
     } catch(e) { console.warn("loadBossTimers error:", e); }
   };
 
   // ── Push any locally-cached boss images up to Supabase ───────────────────
-  // Runs when admin loads the app — finds bosses whose image exists locally
-  // but has no DB row yet, and upserts them so all users can see the image.
   const syncLocalImagesToSupabase = async()=>{
     const allGroups = [
       { key:"live4",                bosses:lsGet("rampageBosses",        []) },
@@ -746,24 +774,14 @@ function AppInner() {
       (existing||[]).forEach(r=>{ dbImages[r.boss_id] = r.image; });
 
       for (const { key, bosses } of allGroups) {
-        // Push boss names to Supabase so all users see renamed bosses
-        const hasRename = bosses.some(b => b.name && !b.name.startsWith("Lv.6") === false);
-        const namesPayload = bosses.map(b=>({id:b.id,name:b.name}));
-        supabase.from("settings").upsert(
-          { key:`boss_names_${key}`, value: JSON.stringify(namesPayload) },
-          { onConflict:"key" }
-        ).catch(()=>{});
-
         for (const b of bosses) {
-          if (!b.image) continue; // no local image, skip
-          const dbImg = dbImages[b.id];
-          // If DB has no image for this boss, upsert the local one
-          if (!dbImg) {
-            await supabase.from("boss_timers").upsert(
-              { boss_id:b.id, group:key, image:b.image, secs:b.secs||0, elapsed:b.elapsed||0, updated_at:new Date().toISOString() },
-              { onConflict:"boss_id" }
-            ).catch(()=>{});
-          }
+          // Only push if local has an image AND DB row either doesn't exist or has no image
+          if (!b.image) continue;
+          if (dbImages[b.id]) continue; // DB already has an image — don't overwrite with potentially older local cache
+          await supabase.from("boss_timers").upsert(
+            { boss_id:b.id, group:key, image:b.image, secs:b.secs||0, elapsed:b.elapsed||0, updated_at:new Date().toISOString() },
+            { onConflict:"boss_id" }
+          ).catch(()=>{});
         }
       }
     } catch(e) { console.warn("syncLocalImagesToSupabase error:", e); }
@@ -1045,6 +1063,17 @@ function AppInner() {
     showToast("🗑️ Channel removed","warn");
   };
 
+  // Rename a channel label (e.g. "CH 3" → "CH 3 · Server PH")
+  const handleRenameChannel = (id, group, label)=>{
+    if (!label?.trim()) return;
+    getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,channelLabel:label.trim()}:b));
+    // Persist to Supabase boss_timers so all users see the new label
+    supabase.from("boss_timers")
+      .upsert({boss_id:id, group, channel_label:label.trim(), updated_at:new Date().toISOString()}, {onConflict:"boss_id"})
+      .catch(()=>{});
+    showToast("✅ Channel renamed!");
+  };
+
   // Update boss image for any group — uploads to Supabase storage boss-images bucket
   const handleRenameBoss = (group, oldName, newName) => {
     if (!newName.trim() || newName === oldName) return;
@@ -1066,56 +1095,92 @@ function AppInner() {
   const handleBossImageUploadGroup = async (file, id, group)=>{
     if (!file || !id || !group) return;
     showToast("⏳ Uploading image...","info");
+
+    // Helper: save image (url or base64) to local state + boss_timers DB
+    const applyImage = async (imageUrl) => {
+      // 1. Update local React state immediately
+      getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:imageUrl}:b));
+
+      // 2. Get current secs/elapsed for the upsert (read from current state directly)
+      const allBossMap = {
+        live4: bosses, myrkrheim: myrkrheimBosses,
+        folkvang_normal: folkvangNormal, folkvang_interserver: folkvangInterserver,
+        canyon: canyonBosses, lindwurm: lindwurmBosses, hilders: hildersBosses,
+      };
+      const curBoss = (allBossMap[group]||bosses).find(x=>x.id===id);
+
+      // 3. Upsert to boss_timers — triggers real-time for all users
+      const { error: upsertErr } = await supabase.from("boss_timers").upsert(
+        {
+          boss_id: id,
+          "group": group,
+          image: imageUrl,
+          secs: curBoss?.secs || 0,
+          elapsed: curBoss?.elapsed || 0,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "boss_id" }
+      );
+      if (upsertErr) {
+        console.error("boss_timers upsert error:", upsertErr);
+        showToast(`⚠️ Saved locally but DB sync failed: ${upsertErr.message}`,"warn");
+        return false;
+      }
+      return true;
+    };
+
     try {
-      const ext = file.name.split('.').pop() || 'png';
-      const path = `${group}_${id}_${Date.now()}.${ext}`;
-      const { data, error: upErr } = await supabase.storage
+      // ── Try Supabase Storage first ──────────────────────────────────────
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+      // Use fixed path (no timestamp) — stable URL, browser caches correctly
+      const path = `${group}/${id}.${ext}`;
+      const { error: upErr } = await supabase.storage
         .from('boss-images')
         .upload(path, file, { upsert: true, contentType: file.type });
-      if (upErr) {
-        console.error("Supabase upload error:", upErr);
-        showToast(`❌ Upload failed: ${upErr.message}`,"error");
-        // Fallback: base64
+
+      if (!upErr) {
+        const { data: urlData } = supabase.storage.from('boss-images').getPublicUrl(path);
+        const publicUrl = urlData?.publicUrl;
+        if (publicUrl) {
+          // Add version param so browsers don't serve cached old image
+          const freshUrl = `${publicUrl}?v=${Date.now()}`;
+          const ok = await applyImage(freshUrl);
+          if (ok) {
+            setBossImageModal(null);
+            showToast("🖼️ Image uploaded — visible to all users!");
+            return;
+          }
+        }
+      } else {
+        console.warn("Storage upload failed, falling back to base64:", upErr.message);
+      }
+
+      // ── Fallback: convert to base64 and store directly in boss_timers ──
+      // This always works regardless of Storage bucket permissions
+      showToast("⏳ Using base64 fallback (Storage unavailable)...","info");
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const base64 = ev.target.result;
+        const ok = await applyImage(base64);
+        setBossImageModal(null);
+        if (ok) showToast("🖼️ Image saved — all users will see it!");
+        else showToast("🖼️ Image saved locally only","warn");
+      };
+      reader.onerror = () => showToast("❌ Could not read image file","error");
+      reader.readAsDataURL(file);
+
+    } catch(e) {
+      console.error("Image upload exception:", e);
+      // Last resort base64 fallback
+      try {
         const reader = new FileReader();
-        reader.onload = ev=>{
-          getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:ev.target.result}:b));
-          setBossImageModal(null); showToast("🖼️ Saved locally (Supabase failed)","warn");
+        reader.onload = async (ev) => {
+          await applyImage(ev.target.result);
+          setBossImageModal(null);
+          showToast("🖼️ Image saved (fallback mode)","warn");
         };
         reader.readAsDataURL(file);
-        return;
-      }
-      const { data: urlData } = supabase.storage.from('boss-images').getPublicUrl(path);
-      const publicUrl = urlData?.publicUrl;
-      if (publicUrl) {
-        const freshUrl = `${publicUrl}?t=${Date.now()}`;
-        // Update local image state
-        getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:freshUrl}:b));
-        // Read current secs/elapsed directly from current state (NOT inside a setter)
-        const allBosses = {
-          live4: bosses, myrkrheim: myrkrheimBosses,
-          folkvang_normal: folkvangNormal, folkvang_interserver: folkvangInterserver,
-          canyon: canyonBosses, lindwurm: lindwurmBosses, hilders: hildersBosses,
-        };
-        const curBoss = (allBosses[group]||bosses).find(x=>x.id===id);
-        const curSecs = curBoss?.secs || 0;
-        const curElapsed = curBoss?.elapsed || 0;
-        // Sync image + timer to boss_timers so ALL users see updated image
-        supabase.from("boss_timers").upsert(
-          {boss_id:id, group, image:freshUrl, secs:curSecs, elapsed:curElapsed, updated_at:new Date().toISOString()},
-          {onConflict:"boss_id"}
-        ).catch(()=>{});
-        setBossImageModal(null);
-        showToast("🖼️ Boss image uploaded!");
-      }
-    } catch(e) {
-      console.error("Upload exception:", e);
-      // Fallback: base64
-      const reader = new FileReader();
-      reader.onload = ev=>{
-        getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:ev.target.result}:b));
-        setBossImageModal(null); showToast("🖼️ Saved locally","warn");
-      };
-      reader.readAsDataURL(file);
+      } catch { showToast(`❌ Upload failed: ${e.message}`,"error"); }
     }
   };
 
@@ -1942,6 +2007,7 @@ function AppInner() {
                 onAddChannel={(bossName,color)=>handleAddChannel("myrkrheim",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"myrkrheim")}
                 onRenameBoss={(oldName,newName)=>handleRenameBoss("myrkrheim",oldName,newName)}
+                onRenameChannel={(id,label)=>handleRenameChannel(id,"myrkrheim",label)}
                 showRespawnEdit={false}
               />
 
@@ -1963,6 +2029,7 @@ function AppInner() {
                 onAddChannel={(bossName,color)=>handleAddChannel("live4",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"live4")}
                 onRenameBoss={(oldName,newName)=>handleRenameBoss("live4",oldName,newName)}
+                onRenameChannel={(id,label)=>handleRenameChannel(id,"live4",label)}
                 showRespawnEdit={false}
               />
 
@@ -1985,6 +2052,7 @@ function AppInner() {
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"canyon")}
                 onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"canyon",secs)}
                 onRenameBoss={(oldName,newName)=>handleRenameBoss("canyon",oldName,newName)}
+                onRenameChannel={(id,label)=>handleRenameChannel(id,"canyon",label)}
                 showRespawnEdit={true}
               />
 
@@ -2007,6 +2075,7 @@ function AppInner() {
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"lindwurm")}
                 onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"lindwurm",secs)}
                 onRenameBoss={(oldName,newName)=>handleRenameBoss("lindwurm",oldName,newName)}
+                onRenameChannel={(id,label)=>handleRenameChannel(id,"lindwurm",label)}
                 showRespawnEdit={true}
               />
 
@@ -2029,6 +2098,7 @@ function AppInner() {
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"hilders")}
                 onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"hilders",secs)}
                 onRenameBoss={(oldName,newName)=>handleRenameBoss("hilders",oldName,newName)}
+                onRenameChannel={(id,label)=>handleRenameChannel(id,"hilders",label)}
                 showRespawnEdit={true}
               />
             </div>
@@ -3595,12 +3665,15 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, c
 }
 
 // ── Boss Group Panel (full page) ─────────────────────────────────────────────
-function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, canTimer, isAdmin, killFlash, onKill, onReset, onSetTimer, onImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels, onRenameBoss }) {
+function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, canTimer, isAdmin, killFlash, onKill, onReset, onSetTimer, onImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels, onRenameBoss, onRenameChannel }) {
   const bossNames = [...new Set(bosses.map(b=>b.name))];
   const [editRespawn, setEditRespawn] = useState(null);
   const [collapsed, setCollapsed] = useState(true);
-  const [editingName, setEditingName] = useState(null); // bossName being edited
+  const [editingName, setEditingName] = useState(null);
   const [editNameVal, setEditNameVal] = useState("");
+  // Inline channel label editor — admin can rename "CH 1" to e.g. "CH 1 · Server 3"
+  const [editingChannelId, setEditingChannelId] = useState(null);
+  const [editChannelVal, setEditChannelVal] = useState("");
   const liveCount = bosses.filter(b=>b.secs===0).length;
   const bodyRef = useRef(null);
   const [bodyHeight, setBodyHeight] = useState(0);
@@ -3694,7 +3767,36 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, c
                             {isAdmin&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",fontSize:14}} className="boss-img-ov">📷 78×78</div>}
                           </div>
                           <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:11.5,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>CH {b.channel}</div>
+                            {/* Channel label — admin can click ✏️ to rename inline */}
+                            {isAdmin && editingChannelId===b.id ? (
+                              <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:3}}>
+                                <input
+                                  autoFocus
+                                  value={editChannelVal}
+                                  onChange={e=>setEditChannelVal(e.target.value)}
+                                  onKeyDown={e=>{
+                                    if(e.key==="Enter"){ onRenameChannel&&onRenameChannel(b.id,editChannelVal); setEditingChannelId(null); }
+                                    if(e.key==="Escape") setEditingChannelId(null);
+                                  }}
+                                  placeholder={`CH ${b.channel}`}
+                                  style={{flex:1,background:"rgba(255,255,255,0.08)",border:`1px solid ${b.color}60`,borderRadius:5,padding:"2px 6px",color:"#e2e8f0",fontSize:10.5,fontFamily:"'Exo 2',sans-serif",fontWeight:700,outline:"none",minWidth:0}}
+                                />
+                                <button onClick={()=>{ onRenameChannel&&onRenameChannel(b.id,editChannelVal); setEditingChannelId(null); }}
+                                  style={{background:`${b.color}20`,border:`1px solid ${b.color}40`,color:b.color,borderRadius:4,padding:"1px 5px",cursor:"pointer",fontSize:10,fontWeight:700}}>✓</button>
+                                <button onClick={()=>setEditingChannelId(null)}
+                                  style={{background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",color:"#64748b",borderRadius:4,padding:"1px 5px",cursor:"pointer",fontSize:10}}>✕</button>
+                              </div>
+                            ) : (
+                              <div style={{display:"flex",alignItems:"center",gap:4}}>
+                                <div style={{fontSize:11.5,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.02em",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                                  {b.channelLabel || `CH ${b.channel}`}
+                                </div>
+                                {isAdmin&&(
+                                  <button onClick={()=>{ setEditingChannelId(b.id); setEditChannelVal(b.channelLabel||`CH ${b.channel}`); }}
+                                    style={{background:"none",border:"none",color:"#3d5070",cursor:"pointer",fontSize:9.5,padding:"0 2px",lineHeight:1,flexShrink:0}} title="Rename channel">✏️</button>
+                                )}
+                              </div>
+                            )}
                             <span style={{display:"inline-flex",alignItems:"center",padding:"2px 7px",borderRadius:5,background:bs.bg,color:bs.color,border:`1px solid ${bs.border}`,fontSize:9.5,fontWeight:700,marginTop:2}}>{st}</span>
                           </div>
                           {/* Big timer */}
