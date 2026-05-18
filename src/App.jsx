@@ -8,7 +8,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_174MDqsta2KNe3orpEN8Ww_0yzhHYaM"; // <
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ── App version — bump this to force users to reload cached bundles ──────────
-const APP_VERSION = "v2.5.0-image-sync-fix";
+const APP_VERSION = "v2.6.0-rls-cache-fix";
 
 // ── Role display ─────────────────────────────────────────────────────────────
 // "Admin" is stored as role="Admin" in the members table (set manually in Supabase)
@@ -595,7 +595,9 @@ function AppInner() {
             ? { ...b,
                 secs:         secs         != null ? secs         : b.secs,
                 elapsed:      elapsed      != null ? elapsed      : b.elapsed,
-                image:        image !== undefined ? image        : b.image,
+                image:        image !== undefined
+                  ? (image && image.startsWith('http') ? `${image.split('?')[0]}?v=${Date.now()}` : image)
+                  : b.image,
                 channelLabel: row.channel_label != null ? row.channel_label : b.channelLabel,
               }
             : b
@@ -690,7 +692,11 @@ function AppInner() {
         data.forEach(row=>{
           if (row.key === "maintenance_mode") setMaintenanceMode(row.value === "true");
           if (row.key === "background_image") setBgImage(row.value || "");
-          if (row.key === "guild_logo" && row.value) setLogoUrl(row.value);
+          if (row.key === "guild_logo" && row.value) {
+            // Strip any stale ?v= param and add a fresh one so browser re-fetches
+            const baseLogoUrl = row.value.split('?')[0];
+            setLogoUrl(`${baseLogoUrl}?v=${Date.now()}`);
+          }
           // Restore boss names saved by admin
           if (row.key && row.key.startsWith("boss_names_") && row.value) {
             try {
@@ -747,7 +753,10 @@ function AppInner() {
                 secs:    row.secs    != null ? row.secs    : b.secs,
                 elapsed: row.elapsed != null ? row.elapsed : b.elapsed,
                 // Always use DB image as source of truth — overrides local cache
-                image:   row.image   ? row.image           : b.image,
+                // Add cache-buster to storage URLs so browser always fetches latest
+                image:   row.image
+                  ? (row.image.startsWith('http') ? `${row.image.split('?')[0]}?v=${Date.now()}` : row.image)
+                  : b.image,
                 channelLabel: row.channel_label ? row.channel_label : b.channelLabel,
               };
             });

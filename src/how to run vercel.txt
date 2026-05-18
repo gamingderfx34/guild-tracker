@@ -1,0 +1,12 @@
+cd C:/Users/Administrator/guild-tracker
+
+npm run build
+
+vercel --prod (skip if needed)
+
+
+
+cd C:/Users/Administrator/guild-tracker
+git add .
+git commit -m "fix image sync"
+git push
