@@ -595,7 +595,7 @@ function AppInner() {
             ? { ...b,
                 secs:         secs         != null ? secs         : b.secs,
                 elapsed:      elapsed      != null ? elapsed      : b.elapsed,
-                image:        image        ?         image        : b.image,
+                image:        image !== undefined ? image        : b.image,
                 channelLabel: row.channel_label != null ? row.channel_label : b.channelLabel,
               }
             : b
@@ -690,6 +690,7 @@ function AppInner() {
         data.forEach(row=>{
           if (row.key === "maintenance_mode") setMaintenanceMode(row.value === "true");
           if (row.key === "background_image") setBgImage(row.value || "");
+          if (row.key === "guild_logo" && row.value) setLogoUrl(row.value);
           // Restore boss names saved by admin
           if (row.key && row.key.startsWith("boss_names_") && row.value) {
             try {
@@ -775,9 +776,9 @@ function AppInner() {
 
       for (const { key, bosses } of allGroups) {
         for (const b of bosses) {
-          // Only push if local has an image AND DB row either doesn't exist or has no image
+          // Only push if local has an image AND it differs from what's already in DB
           if (!b.image) continue;
-          if (dbImages[b.id]) continue; // DB already has an image — don't overwrite with potentially older local cache
+          if (dbImages[b.id] === b.image) continue; // already in sync — skip
           await supabase.from("boss_timers").upsert(
             { boss_id:b.id, group:key, image:b.image, secs:b.secs||0, elapsed:b.elapsed||0, updated_at:new Date().toISOString() },
             { onConflict:"boss_id" }
@@ -926,10 +927,43 @@ function AppInner() {
   const handleLogoUpload = async(e)=>{
     const file = e.target.files?.[0]; if(!file) return;
     setUploading(true); setUploadMsg("");
+
+    // Show local preview immediately while upload runs in background
     const reader = new FileReader();
-    reader.onload = ev=>setLogoUrl(ev.target.result);
+    reader.onload = ev => setLogoUrl(ev.target.result);
     reader.readAsDataURL(file);
-    setTimeout(()=>{ setUploadMsg("✅ Saved!"); setUploading(false); setTimeout(()=>setUploadMsg(""),3000); },1200);
+
+    try {
+      // Upload to the existing 'asset' bucket under a fixed path so it survives refresh
+      const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+      const storagePath = `logo/guild_logo.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from('asset')
+        .upload(storagePath, file, { upsert: true, contentType: file.type });
+
+      if (!upErr) {
+        const { data: urlData } = supabase.storage.from('asset').getPublicUrl(storagePath);
+        // Strip any existing ?v param then add a fresh one so browsers re-fetch
+        const baseUrl = (urlData?.publicUrl || '').split('?')[0];
+        const freshUrl = `${baseUrl}?v=${Date.now()}`;
+        setLogoUrl(freshUrl);
+        // Persist URL to settings table — all users will load this logo on next refresh/load
+        await supabase.from('settings').upsert(
+          { key: 'guild_logo', value: freshUrl },
+          { onConflict: 'key' }
+        );
+        setUploadMsg("✅ Saved & synced to all users!");
+      } else {
+        console.warn("Logo storage upload failed:", upErr.message);
+        setUploadMsg("⚠️ Preview only — storage upload failed");
+      }
+    } catch(err) {
+      console.warn("Logo upload exception:", err);
+      setUploadMsg("⚠️ Preview only — could not sync");
+    }
+
+    setUploading(false);
+    setTimeout(()=>setUploadMsg(""), 3500);
   };
 
   // ── Boss image upload ──────────────────────────────────────────────────────
@@ -1142,10 +1176,12 @@ function AppInner() {
         const { data: urlData } = supabase.storage.from('boss-images').getPublicUrl(path);
         const publicUrl = urlData?.publicUrl;
         if (publicUrl) {
-          // Add version param so browsers don't serve cached old image
-          const freshUrl = `${publicUrl}?v=${Date.now()}`;
-          const ok = await applyImage(freshUrl);
+          // Store the clean URL in DB (no timestamp) so all users load the same stable URL.
+          // Append ?v only for the local display state so this browser re-fetches the new file.
+          const ok = await applyImage(publicUrl);
           if (ok) {
+            // Override local state with cache-busted URL for immediate display
+            getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:`${publicUrl}?v=${Date.now()}`}:b));
             setBossImageModal(null);
             showToast("🖼️ Image uploaded — visible to all users!");
             return;
