@@ -788,10 +788,12 @@ function AppInner() {
           // Only push if local has an image AND it differs from what's already in DB
           if (!b.image) continue;
           if (dbImages[b.id] === b.image) continue; // already in sync — skip
-          await supabase.from("boss_timers").upsert(
-            { boss_id:b.id, group:key, image:b.image, secs:b.secs||0, elapsed:b.elapsed||0, updated_at:new Date().toISOString() },
-            { onConflict:"boss_id" }
-          ).catch(()=>{});
+          try {
+            await supabase.from("boss_timers").upsert(
+              { boss_id:b.id, group:key, image:b.image, secs:b.secs||0, elapsed:b.elapsed||0, updated_at:new Date().toISOString() },
+              { onConflict:"boss_id" }
+            );
+          } catch(e) { console.warn("syncLocalImages upsert error:", e); }
         }
       }
     } catch(e) { console.warn("syncLocalImagesToSupabase error:", e); }
@@ -1113,7 +1115,7 @@ function AppInner() {
     // Persist to Supabase boss_timers so all users see the new label
     supabase.from("boss_timers")
       .upsert({boss_id:id, group, channel_label:label.trim(), updated_at:new Date().toISOString()}, {onConflict:"boss_id"})
-      .catch(()=>{});
+      .then(()=>{}).catch(()=>{});
     showToast("✅ Channel renamed!");
   };
 
@@ -1131,7 +1133,7 @@ function AppInner() {
     supabase.from("settings").upsert(
       { key:`boss_names_${group}`, value: JSON.stringify(updatedNames) },
       { onConflict:"key" }
-    ).catch(()=>{});
+    ).then(()=>{}).catch(()=>{});
     showToast(`✅ Boss renamed!`);
   };
 
