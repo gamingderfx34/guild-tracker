@@ -8,7 +8,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_174MDqsta2KNe3orpEN8Ww_0yzhHYaM"; // <
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ── App version — bump this to force users to reload cached bundles ──────────
-const APP_VERSION = "v2.2.0-permissions-polish";
+const APP_VERSION = "v2.3.0-crash-fix";
 
 // ── Role display ─────────────────────────────────────────────────────────────
 // "Admin" is stored as role="Admin" in the members table (set manually in Supabase)
@@ -234,9 +234,39 @@ const TH = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  ERROR BOUNDARY — catches render crashes so the app never goes fully blank
+// ═══════════════════════════════════════════════════════════════════════════
+import { Component } from "react";
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { hasError:false, error:null }; }
+  static getDerivedStateFromError(error) { return { hasError:true, error }; }
+  componentDidCatch(error, info) { console.error("App crash:", error, info); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{height:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:"#06070e",color:"#e2e8f0",fontFamily:"'Exo 2',sans-serif",gap:16,padding:32,textAlign:"center"}}>
+          <div style={{fontSize:48}}>⚠️</div>
+          <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:26,fontWeight:700,color:"#f87171"}}>Something went wrong</div>
+          <div style={{fontSize:13,color:"#3d5070",maxWidth:400}}>{String(this.state.error?.message||"Unknown error")}</div>
+          <button onClick={()=>{ this.setState({hasError:false,error:null}); window.location.reload(); }}
+            style={{marginTop:8,background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",border:"none",borderRadius:10,padding:"12px 28px",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Exo 2',sans-serif"}}>
+            🔄 Reload App
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  MAIN APP
 // ═══════════════════════════════════════════════════════════════════════════
 export default function App() {
+  return <ErrorBoundary><AppInner /></ErrorBoundary>;
+}
+
+function AppInner() {
   // Auth
   const [currentUser, setCurrentUser] = useState(null);
   const [authPage, setAuthPage]       = useState("login");
@@ -929,23 +959,25 @@ export default function App() {
   const handleMarkKilledGroup = (id, group)=>{
     setKillFlash(id); setTimeout(()=>setKillFlash(null),700);
     const setter = getSetterByGroup(group);
-    let newSecs = 0;
-    setter(prev=>{
-      const updated = prev.map(b=>{
-        if(b.id!==id) return b;
-        const secs = b.respawnSecs != null
-          ? b.respawnSecs
-          : Math.floor((b.minR + Math.random()*(b.maxR-b.minR))*60);
-        newSecs = secs;
-        return {...b, secs, elapsed:0};
-      });
-      // Sync to Supabase so all users see the update
-      const boss = updated.find(b=>b.id===id);
-      if(boss) {
-        supabase.from("boss_timers").upsert({boss_id:id, group, secs:boss.secs, elapsed:0, updated_at:new Date().toISOString()}, {onConflict:"boss_id"}).catch(()=>{});
-      }
-      return updated;
-    });
+    // Compute respawn secs from current state BEFORE calling setter
+    const allBosses = {
+      live4: bosses, myrkrheim: myrkrheimBosses,
+      folkvang_normal: folkvangNormal, folkvang_interserver: folkvangInterserver,
+      canyon: canyonBosses, lindwurm: lindwurmBosses, hilders: hildersBosses,
+    };
+    const currentBoss = (allBosses[group] || bosses).find(b=>b.id===id);
+    const secs = currentBoss?.respawnSecs != null
+      ? currentBoss.respawnSecs
+      : Math.floor(((currentBoss?.minR||30) + Math.random()*((currentBoss?.maxR||90)-(currentBoss?.minR||30)))*60);
+
+    // Update local state
+    setter(prev=>prev.map(b=>b.id===id ? {...b, secs, elapsed:0} : b));
+
+    // Sync to Supabase OUTSIDE setter (safe async side-effect)
+    supabase.from("boss_timers")
+      .upsert({boss_id:id, group, secs, elapsed:0, updated_at:new Date().toISOString()}, {onConflict:"boss_id"})
+      .catch(()=>{});
+
     if(discordConnected) showToast("📢 Discord notified: Boss killed!","info");
   };
 
@@ -1016,15 +1048,18 @@ export default function App() {
   // Update boss image for any group — uploads to Supabase storage boss-images bucket
   const handleRenameBoss = (group, oldName, newName) => {
     if (!newName.trim() || newName === oldName) return;
-    getSetterByGroup(group)(prev=>{
-      const updated = prev.map(b=>b.name===oldName?{...b,name:newName}:b);
-      // Sync renamed boss names to Supabase so all users see correct names
-      supabase.from("settings").upsert(
-        { key:`boss_names_${group}`, value: JSON.stringify(updated.map(b=>({id:b.id,name:b.name}))) },
-        { onConflict:"key" }
-      ).catch(()=>{});
-      return updated;
-    });
+    getSetterByGroup(group)(prev=>prev.map(b=>b.name===oldName?{...b,name:newName}:b));
+    // Sync renamed boss names to Supabase OUTSIDE setter (safe)
+    const allBosses = {
+      live4: bosses, myrkrheim: myrkrheimBosses,
+      folkvang_normal: folkvangNormal, folkvang_interserver: folkvangInterserver,
+      canyon: canyonBosses, lindwurm: lindwurmBosses, hilders: hildersBosses,
+    };
+    const updatedNames = (allBosses[group]||bosses).map(b=>({id:b.id, name:b.name===oldName?newName:b.name}));
+    supabase.from("settings").upsert(
+      { key:`boss_names_${group}`, value: JSON.stringify(updatedNames) },
+      { onConflict:"key" }
+    ).catch(()=>{});
     showToast(`✅ Boss renamed!`);
   };
 
@@ -1052,18 +1087,19 @@ export default function App() {
       const { data: urlData } = supabase.storage.from('boss-images').getPublicUrl(path);
       const publicUrl = urlData?.publicUrl;
       if (publicUrl) {
-        // Add cache-bust timestamp so browser doesn't show stale image
         const freshUrl = `${publicUrl}?t=${Date.now()}`;
+        // Update local image state
         getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:freshUrl}:b));
-        // Sync image to boss_timers so ALL users see the updated image
-        // Read current secs/elapsed so the upsert row is complete (not null)
-        const setter2 = getSetterByGroup(group);
-        let curSecs = 0, curElapsed = 0;
-        setter2(prev=>{
-          const b = prev.find(x=>x.id===id);
-          if(b){ curSecs=b.secs||0; curElapsed=b.elapsed||0; }
-          return prev; // no change, just reading
-        });
+        // Read current secs/elapsed directly from current state (NOT inside a setter)
+        const allBosses = {
+          live4: bosses, myrkrheim: myrkrheimBosses,
+          folkvang_normal: folkvangNormal, folkvang_interserver: folkvangInterserver,
+          canyon: canyonBosses, lindwurm: lindwurmBosses, hilders: hildersBosses,
+        };
+        const curBoss = (allBosses[group]||bosses).find(x=>x.id===id);
+        const curSecs = curBoss?.secs || 0;
+        const curElapsed = curBoss?.elapsed || 0;
+        // Sync image + timer to boss_timers so ALL users see updated image
         supabase.from("boss_timers").upsert(
           {boss_id:id, group, image:freshUrl, secs:curSecs, elapsed:curElapsed, updated_at:new Date().toISOString()},
           {onConflict:"boss_id"}
