@@ -988,6 +988,9 @@ export default function App() {
     setTimerSS(String(secs%60));
     setBossTimerModal({id, group});
   };
+
+  // Update respawn time for a boss
+  const handleSetRespawnTime = (id, group, secs)=>{
     getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,respawnSecs:secs}:b));
   };
 
