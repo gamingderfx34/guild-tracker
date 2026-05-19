@@ -638,11 +638,19 @@ function AppInner() {
     try {
       const { data, error } = await supabase.from("auction_items").select("*").order("created_at",{ascending:false});
       if (!error && data) {
-        setAuctionItems(data.map(i=>({
-          ...i,
-          bids: typeof i.bids === "string" ? JSON.parse(i.bids) : (i.bids||[]),
-          endTime: i.end_time ? new Date(i.end_time).getTime() : (Date.now()+3600000),
-        })));
+        setAuctionItems(data.map(i=>{
+          // Add cache-buster to Supabase storage URLs so all users always see the latest image
+          let image = i.image || null;
+          if (image && image.startsWith("http")) {
+            image = `${image.split("?")[0]}?v=${Date.now()}`;
+          }
+          return {
+            ...i,
+            image,
+            bids: typeof i.bids === "string" ? JSON.parse(i.bids) : (i.bids||[]),
+            endTime: i.end_time ? new Date(i.end_time).getTime() : (Date.now()+3600000),
+          };
+        }));
       }
     } catch {}
   };
@@ -818,6 +826,18 @@ function AppInner() {
       }
     });
   },[auctionItems, currentUser]);
+
+  // ── Auto-declare winner when auction timer expires ────────────────────────
+  useEffect(()=>{
+    auctionItems.forEach(item=>{
+      const timeLeft = (item.endTime||0) - now;
+      // Fire when time just hit 0 (within a 2s window), not locked, and has a bidder
+      if (timeLeft <= 0 && timeLeft > -2000 && !item.locked && item.highBidder) {
+        handleAnnounceWinner(item);
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[now]);
 
   // ── Weekly Excel auto-export check ───────────────────────────────────────
   useEffect(()=>{
@@ -2416,10 +2436,10 @@ function AppInner() {
                             <div style={{fontSize:20}}>🔒</div>
                             <div style={{color:"#64748b",fontSize:12,fontWeight:700,marginTop:4}}>AUCTION ENDED</div>
                             <div style={{color:"#94a3b8",fontSize:11,marginTop:2}}>Won by {item.winner}</div>
-                            {isAdmin&&(
+                            {canManageAuction&&(
                               <button className="btn" onClick={()=>handleDeleteAuctionItem(item.id)}
                                 style={{marginTop:10,background:"rgba(248,113,113,0.18)",border:"1px solid rgba(248,113,113,0.4)",color:"#f87171",padding:"7px 16px",fontSize:11,fontWeight:700}}>
-                                🗑️ Remove Tab
+                                🗑️ Remove Item
                               </button>
                             )}
                           </div>
@@ -2488,7 +2508,7 @@ function AppInner() {
                           <button className="btn" onClick={()=>setEditAuction({...item})}
                             style={{background:"rgba(96,165,250,0.1)",border:"1px solid rgba(96,165,250,0.25)",color:"#60a5fa",padding:"10px 12px",fontSize:12}}>✏️</button>
                         )}
-                        {canManageAuction&&!item.locked&&(
+                        {canManageAuction&&(
                           <button className="btn" onClick={()=>handleDeleteAuctionItem(item.id)}
                             style={{background:"rgba(248,113,113,0.1)",border:"1px solid rgba(248,113,113,0.2)",color:"#f87171",padding:"10px 12px",fontSize:12}}>🗑️</button>
                         )}
