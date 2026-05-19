@@ -1898,6 +1898,9 @@ function AppInner() {
       loading={authLoading} error={authError} setError={setAuthError}
       seasonText={seasonText}
       guildName={guildName}
+      logoSize={logoSize}
+      logoUrl={logoUrl}
+      creatorsName={creatorsName}
     />;
   }
 
@@ -1997,7 +2000,7 @@ function AppInner() {
           {/* Logo */}
           <div style={{padding:collapsed?"18px 0":"22px 20px 16px",display:"flex",alignItems:"center",gap:12,justifyContent:collapsed?"center":"flex-start",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
             <div className="logo-ring" onClick={()=>setActiveNav("dashboard")} title="Go to Dashboard"
-              style={{width:Math.min(logoSize,76),height:Math.min(logoSize,76),borderRadius:"50%",border:"2px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.07)",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden",flexShrink:0,boxShadow:"0 0 24px rgba(251,191,36,0.18)"}}>
+              style={{width:Math.min(logoSize||76,76),height:Math.min(logoSize||76,76),borderRadius:"50%",border:"2px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.07)",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden",flexShrink:0,boxShadow:"0 0 24px rgba(251,191,36,0.18)"}}>
               <img src={logoUrl} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}} onError={()=>setLogoErr(true)} />
             </div>
             {!collapsed&&<div>
@@ -4303,7 +4306,7 @@ function BossPanel({ bosses, onKill, onReset, onManual, onBossImage, killFlash, 
 // ═══════════════════════════════════════════════════════════════════════════
 //  AUTH SCREEN
 // ═══════════════════════════════════════════════════════════════════════════
-function AuthScreen({ page, setPage, loginForm, setLoginForm, regForm, setRegForm, onLogin, onRegister, onForgotPassword, loading, error, setError, seasonText, guildName }) {
+function AuthScreen({ page, setPage, loginForm, setLoginForm, regForm, setRegForm, onLogin, onRegister, onForgotPassword, loading, error, setError, seasonText, guildName, logoSize, logoUrl, creatorsName }) {
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotStatus, setForgotStatus] = useState(null); // {type:"success"|"error", msg}
@@ -4351,8 +4354,8 @@ function AuthScreen({ page, setPage, loginForm, setLoginForm, regForm, setRegFor
 
         <div className="auth-card">
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginBottom:28}}>
-            <div className="floating-icon" style={{width:Math.min(logoSize,96),height:Math.min(logoSize,96),borderRadius:"50%",border:"2px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.07)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14,boxShadow:"0 0 40px rgba(251,191,36,0.2)"}}>
-              <img src={MOCK_LOGO} alt="Rampage" style={{width:"80%",height:"80%",objectFit:"contain",borderRadius:"50%"}} onError={e=>{e.target.style.display="none";}} />
+            <div className="floating-icon" style={{width:Math.min(logoSize||76,96),height:Math.min(logoSize||76,96),borderRadius:"50%",border:"2px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.07)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14,boxShadow:"0 0 40px rgba(251,191,36,0.2)"}}>
+              <img src={logoUrl||MOCK_LOGO} alt="Rampage" style={{width:"80%",height:"80%",objectFit:"contain",borderRadius:"50%"}} onError={e=>{e.target.style.display="none";}} />
             </div>
             <h1 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:48,fontWeight:700,letterSpacing:"0.16em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",lineHeight:1,textAlign:"center"}}>{guildName}</h1>
             <p style={{color:"#2d3a52",fontSize:10.5,letterSpacing:"0.12em",marginTop:6,textAlign:"center"}}>GUILD TRACKER · {seasonText}</p>
