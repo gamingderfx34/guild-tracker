@@ -326,6 +326,7 @@ function AppInner() {
   const [bgImage, setBgImage]               = useState("");
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [seasonText, setSeasonText]           = useState("SEASON 12");
+  const [guildName, setGuildName]             = useState("RAMPAGE");
   const [bossScheduleCollapsed, setBossScheduleCollapsed] = useState(true);
 
   // ── Boss alert sound system ──────────────────────────────────────────────
@@ -754,6 +755,7 @@ function AppInner() {
           if (row.key === "maintenance_mode") setMaintenanceMode(row.value === "true");
           if (row.key === "background_image") setBgImage(row.value || "");
           if (row.key === "season_text" && row.value) setSeasonText(row.value);
+          if (row.key === "guild_name" && row.value) setGuildName(row.value);
           if (row.key === "guild_logo" && row.value) {
             const baseLogoUrl = row.value.split('?')[0];
             setLogoUrl(`${baseLogoUrl}?v=${Date.now()}`);
@@ -1845,7 +1847,7 @@ function AppInner() {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(winRows.length ? winRows : [{Note:"No winners yet"}]), "Auction Winners");
 
       const dateStr = new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}).replace(/,/g,"").replace(/ /g,"-");
-      XLSX.writeFile(wb, `RAMPAGE-Guild-Report-${dateStr}.xlsx`);
+      XLSX.writeFile(wb, `${guildName}-Guild-Report-${dateStr}.xlsx`);
       if(!silent) showToast("📊 Excel exported successfully!");
     } catch(e) {
       if(!silent) showToast("❌ Export failed","error");
@@ -1888,6 +1890,8 @@ function AppInner() {
       onLogin={handleLogin} onRegister={handleRegister}
       onForgotPassword={handleForgotPassword}
       loading={authLoading} error={authError} setError={setAuthError}
+      seasonText={seasonText}
+      guildName={guildName}
     />;
   }
 
@@ -1991,7 +1995,7 @@ function AppInner() {
               <img src={logoUrl} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}} onError={()=>setLogoErr(true)} />
             </div>
             {!collapsed&&<div>
-              <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:20,fontWeight:700,letterSpacing:"0.12em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>RAMPAGE</div>
+              <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:20,fontWeight:700,letterSpacing:"0.12em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>{guildName}</div>
               <div style={{fontSize:9.5,color:"#3d5070",letterSpacing:"0.1em"}}>GUILD TRACKER · {seasonText}</div>
             </div>}
           </div>
@@ -2762,7 +2766,7 @@ function AppInner() {
                 <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#f1f5f9",marginBottom:16,letterSpacing:"0.04em"}}>🏰 Guild Settings</h3>
                 <div style={{marginBottom:13}}>
                   <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Guild Name</label>
-                  <input className="dark-input" defaultValue="RAMPAGE" disabled={!isLeader} />
+                  <input className="dark-input" value={guildName} onChange={e=>setGuildName(e.target.value.toUpperCase())} disabled={!isLeader} placeholder="e.g. RAMPAGE" />
                 </div>
                 <div style={{marginBottom:13}}>
                   <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Season Text <span style={{color:"#60a5fa",fontWeight:400,textTransform:"none",fontSize:10}}>(shown on login screen)</span></label>
@@ -2770,7 +2774,8 @@ function AppInner() {
                 </div>
                 {isLeader&&<button className="btn" onClick={async()=>{
                   await supabase.from("settings").upsert({key:"season_text",value:seasonText},{onConflict:"key"});
-                  showToast("✅ Season text saved!");
+                  await supabase.from("settings").upsert({key:"guild_name",value:guildName},{onConflict:"key"});
+                  showToast("✅ Settings saved!");
                 }} style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"10px 22px",fontSize:13,marginTop:4}}>Save Changes</button>}
               </div>
 
@@ -4191,7 +4196,7 @@ function BossPanel({ bosses, onKill, onReset, onManual, onBossImage, killFlash, 
 // ═══════════════════════════════════════════════════════════════════════════
 //  AUTH SCREEN
 // ═══════════════════════════════════════════════════════════════════════════
-function AuthScreen({ page, setPage, loginForm, setLoginForm, regForm, setRegForm, onLogin, onRegister, onForgotPassword, loading, error, setError }) {
+function AuthScreen({ page, setPage, loginForm, setLoginForm, regForm, setRegForm, onLogin, onRegister, onForgotPassword, loading, error, setError, seasonText, guildName }) {
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotStatus, setForgotStatus] = useState(null); // {type:"success"|"error", msg}
@@ -4242,7 +4247,7 @@ function AuthScreen({ page, setPage, loginForm, setLoginForm, regForm, setRegFor
             <div className="floating-icon" style={{width:72,height:72,borderRadius:"50%",border:"2px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.07)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14,boxShadow:"0 0 40px rgba(251,191,36,0.2)"}}>
               <img src={MOCK_LOGO} alt="Rampage" style={{width:"80%",height:"80%",objectFit:"contain",borderRadius:"50%"}} onError={e=>{e.target.style.display="none";}} />
             </div>
-            <h1 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:48,fontWeight:700,letterSpacing:"0.16em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",lineHeight:1,textAlign:"center"}}>RAMPAGE</h1>
+            <h1 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:48,fontWeight:700,letterSpacing:"0.16em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",lineHeight:1,textAlign:"center"}}>{guildName}</h1>
             <p style={{color:"#2d3a52",fontSize:10.5,letterSpacing:"0.12em",marginTop:6,textAlign:"center"}}>GUILD TRACKER · {seasonText}</p>
             <p style={{color:"#2d3a52",fontSize:10.5,letterSpacing:"0.12em",marginTop:3,textAlign:"center"}}>Created by : <span style={{color:"#f59e0b",fontWeight:700}}>gamingderfx</span></p>
           </div>
@@ -4303,7 +4308,7 @@ function AuthScreen({ page, setPage, loginForm, setLoginForm, regForm, setRegFor
                     {loading?"Signing in...":"Sign In →"}
                   </button>
                   <div style={{background:"rgba(251,191,36,0.07)",border:"1px solid rgba(251,191,36,0.18)",borderRadius:10,padding:"12px 16px",marginTop:4,textAlign:"center"}}>
-                    <div style={{fontSize:14,color:"#fbbf24",fontWeight:700,letterSpacing:"0.06em",marginBottom:4}}>⚔️ Welcome to RAMPAGE</div>
+                    <div style={{fontSize:14,color:"#fbbf24",fontWeight:700,letterSpacing:"0.06em",marginBottom:4}}>⚔️ Welcome to {guildName}</div>
                     <p style={{fontSize:11.5,color:"#64748b",lineHeight:1.6}}>Register with your email and guild name. New accounts start as <strong style={{color:"#a78bfa"}}>Recruit</strong>. Leader <strong style={{color:"#fbbf24"}}>Valiant</strong> will assign your rank.</p>
                   </div>
                 </div>
