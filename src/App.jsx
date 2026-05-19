@@ -2160,6 +2160,26 @@ function AppInner() {
               ))}
             </div>
 
+            {/* Discord Widget — visible to all members on Dashboard */}
+            {discordInviteLink && (
+              <div style={{marginBottom:18}}>
+                <a href={discordInviteLink} target="_blank" rel="noopener noreferrer"
+                  style={{display:"inline-flex",alignItems:"center",gap:14,background:"linear-gradient(135deg,rgba(88,101,242,0.18),rgba(114,137,218,0.1))",border:"1px solid rgba(88,101,242,0.4)",borderRadius:16,padding:"14px 20px",cursor:"pointer",textDecoration:"none",transition:"all 0.2s",maxWidth:320,boxShadow:"0 4px 20px rgba(88,101,242,0.15)"}}
+                  onMouseEnter={e=>{e.currentTarget.style.background="linear-gradient(135deg,rgba(88,101,242,0.28),rgba(114,137,218,0.18))";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 8px 28px rgba(88,101,242,0.3)";}}
+                  onMouseLeave={e=>{e.currentTarget.style.background="linear-gradient(135deg,rgba(88,101,242,0.18),rgba(114,137,218,0.1))";e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 4px 20px rgba(88,101,242,0.15)";}}>
+                  <div style={{width:48,height:48,flexShrink:0,background:"#5865f2",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 14px rgba(88,101,242,0.45)"}}>
+                    <svg width="60%" height="60%" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.04em",maxWidth:192,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{discordServerName||"Discord Server"}</div>
+                    <div style={{fontSize:10.5,color:"#7289da",fontWeight:600,marginTop:2,letterSpacing:"0.05em"}}>Click to join ↗</div>
+                  </div>
+                </a>
+              </div>
+            )}
+
             {/* Role summary */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:22}}>
               {[
@@ -2919,70 +2939,44 @@ function AppInner() {
                 }} style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"10px 22px",fontSize:13,marginTop:4}}>Save Season</button>}
               </div>
 
+              {/* Discord Integration — Admin only in Settings */}
+              {isAdmin&&(
               <div style={{background:"rgba(88,101,242,0.06)",border:"1px solid rgba(88,101,242,0.22)",borderRadius:18,padding:"22px"}}>
                 <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#a5b4fc",marginBottom:6,letterSpacing:"0.04em"}}>🎮 Discord Integration</h3>
-                <p style={{color:"#3d5070",fontSize:11.5,marginBottom:16,lineHeight:1.6}}>Connect a Discord webhook for auto-notifications. Set an invite link so members can join your Discord server directly from the app.</p>
+                <p style={{color:"#3d5070",fontSize:11.5,marginBottom:16,lineHeight:1.6}}>Connect a Discord webhook for auto-notifications. Set an invite link so members can join your Discord server — the widget will appear on the Dashboard for all members.</p>
 
-                {/* Webhook URL — admin only */}
-                {isAdmin&&(
-                  <div style={{marginBottom:13}}>
-                    <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Webhook URL</label>
-                    <input className="dark-input" placeholder="https://discord.com/api/webhooks/..." value={discordWebhook} onChange={e=>setDiscordWebhook(e.target.value)} />
-                  </div>
-                )}
-                {isAdmin&&<button className="btn" onClick={()=>{setDiscordConnected(true);showToast("🎮 Discord connected!");}}
+                {/* Webhook URL */}
+                <div style={{marginBottom:13}}>
+                  <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Webhook URL</label>
+                  <input className="dark-input" placeholder="https://discord.com/api/webhooks/..." value={discordWebhook} onChange={e=>setDiscordWebhook(e.target.value)} />
+                </div>
+                <button className="btn" onClick={()=>{setDiscordConnected(true);showToast("🎮 Discord connected!");}}
                   style={{background:discordConnected?"rgba(52,211,153,0.15)":"linear-gradient(135deg,#5865f2,#7289da)",border:discordConnected?"1px solid rgba(52,211,153,0.3)":"none",color:discordConnected?"#34d399":"#fff",padding:"10px 22px",fontSize:13,marginBottom:18}}>
                   {discordConnected?"✅ Connected":"Connect Webhook"}
-                </button>}
+                </button>
 
-                <div style={{borderTop:"1px solid rgba(88,101,242,0.18)",paddingTop:16,marginTop:isAdmin?4:0}}>
-                  <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.08em"}}>Discord Server Widget <span style={{color:"#7289da",fontWeight:400,textTransform:"none",fontSize:10}}>(visible to all members)</span></label>
-
-                  {/* Admin: edit fields */}
-                  {isAdmin&&(
-                    <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
-                      <div>
-                        <label style={{display:"block",color:"#3d5070",fontSize:10,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.07em"}}>Server Name <span style={{color:"#64748b",fontWeight:400,textTransform:"none",fontSize:10}}>(shown beside logo — max 192px)</span></label>
-                        <input className="dark-input" placeholder="e.g. Rampage" value={discordServerName} onChange={e=>setDiscordServerName(e.target.value)} style={{fontSize:13}} />
-                      </div>
-                      <div>
-                        <label style={{display:"block",color:"#3d5070",fontSize:10,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.07em"}}>Invite Link</label>
-                        <input className="dark-input" placeholder="https://discord.gg/yourcode" value={discordInviteLink} onChange={e=>setDiscordInviteLink(e.target.value)} style={{fontSize:13}} />
-                      </div>
-                      <button className="btn" onClick={async()=>{
-                        await supabase.from("settings").upsert({key:"discord_invite_link",value:discordInviteLink},{onConflict:"key"});
-                        await supabase.from("settings").upsert({key:"discord_server_name",value:discordServerName},{onConflict:"key"});
-                        showToast("✅ Discord widget saved — visible to all members!");
-                      }} style={{background:"linear-gradient(135deg,#5865f2,#7289da)",color:"#fff",padding:"10px 20px",fontSize:13,alignSelf:"flex-start"}}>
-                        💾 Save Widget
-                      </button>
+                <div style={{borderTop:"1px solid rgba(88,101,242,0.18)",paddingTop:16,marginTop:4}}>
+                  <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:10,textTransform:"uppercase",letterSpacing:"0.08em"}}>Dashboard Widget Settings <span style={{color:"#7289da",fontWeight:400,textTransform:"none",fontSize:10}}>(shown on Dashboard for all members)</span></label>
+                  <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
+                    <div>
+                      <label style={{display:"block",color:"#3d5070",fontSize:10,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.07em"}}>Server Name <span style={{color:"#64748b",fontWeight:400,textTransform:"none",fontSize:10}}>(shown beside logo)</span></label>
+                      <input className="dark-input" placeholder="e.g. Rampage" value={discordServerName} onChange={e=>setDiscordServerName(e.target.value)} style={{fontSize:13}} />
                     </div>
-                  )}
-
-                  {/* Widget preview / live widget for all users */}
-                  {discordInviteLink ? (
-                    <a href={discordInviteLink} target="_blank" rel="noopener noreferrer"
-                      style={{display:"inline-flex",alignItems:"center",gap:14,background:"linear-gradient(135deg,rgba(88,101,242,0.18),rgba(114,137,218,0.1))",border:"1px solid rgba(88,101,242,0.4)",borderRadius:16,padding:"14px 20px",cursor:"pointer",textDecoration:"none",transition:"all 0.2s",maxWidth:320,boxShadow:"0 4px 20px rgba(88,101,242,0.15)"}}
-                      onMouseEnter={e=>{e.currentTarget.style.background="linear-gradient(135deg,rgba(88,101,242,0.28),rgba(114,137,218,0.18))";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 8px 28px rgba(88,101,242,0.3)";}}
-                      onMouseLeave={e=>{e.currentTarget.style.background="linear-gradient(135deg,rgba(88,101,242,0.18),rgba(114,137,218,0.1))";e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 4px 20px rgba(88,101,242,0.15)";}}>
-                      {/* Discord logo SVG */}
-                      <div style={{width:Math.min(logoSize||76,192),height:Math.min(logoSize||76,192),maxWidth:56,maxHeight:56,flexShrink:0,background:"#5865f2",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 14px rgba(88,101,242,0.45)"}}>
-                        <svg width="60%" height="60%" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
-                          <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
-                        </svg>
-                      </div>
-                      <div>
-                        <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.04em",maxWidth:192,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{discordServerName||"Discord Server"}</div>
-                        <div style={{fontSize:10.5,color:"#7289da",fontWeight:600,marginTop:2,letterSpacing:"0.05em"}}>Click to join ↗</div>
-                      </div>
-                    </a>
-                  ) : (
-                    <div style={{background:"rgba(255,255,255,0.03)",border:"1px dashed rgba(88,101,242,0.3)",borderRadius:14,padding:"18px 20px",color:"#3d5070",fontSize:12,textAlign:"center"}}>
-                      {isAdmin ? "⬆️ Fill in the server name and invite link above, then save." : "No Discord server linked yet — ask your admin to add one."}
+                    <div>
+                      <label style={{display:"block",color:"#3d5070",fontSize:10,fontWeight:700,marginBottom:5,textTransform:"uppercase",letterSpacing:"0.07em"}}>Invite Link</label>
+                      <input className="dark-input" placeholder="https://discord.gg/yourcode" value={discordInviteLink} onChange={e=>setDiscordInviteLink(e.target.value)} style={{fontSize:13}} />
                     </div>
-                  )}
+                    <button className="btn" onClick={async()=>{
+                      await supabase.from("settings").upsert({key:"discord_invite_link",value:discordInviteLink},{onConflict:"key"});
+                      await supabase.from("settings").upsert({key:"discord_server_name",value:discordServerName},{onConflict:"key"});
+                      showToast("✅ Discord widget saved — visible on Dashboard!");
+                    }} style={{background:"linear-gradient(135deg,#5865f2,#7289da)",color:"#fff",padding:"10px 20px",fontSize:13,alignSelf:"flex-start"}}>
+                      💾 Save Widget
+                    </button>
+                  </div>
                 </div>
               </div>
+              )}
 
               {/* Event Points Config */}
               <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"22px"}}>
