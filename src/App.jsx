@@ -327,7 +327,7 @@ function AppInner() {
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [seasonText, setSeasonText]           = useState("SEASON 12");
   const [guildName, setGuildName]             = useState("RAMPAGE");
-  const [creatorsName, setCreatorsName]       = useState("gamingderfx");
+  const [creatorsName, setCreatorsName]       = useState("Valiant");
   const [appVersion, setAppVersion]           = useState(APP_VERSION);
   const [logoSize, setLogoSize]               = useState(76);
   const [discordInviteLink, setDiscordInviteLink] = useState("");
@@ -1135,9 +1135,14 @@ function AppInner() {
       canyon: canyonBosses, lindwurm: lindwurmBosses, hilders: hildersBosses,
     };
     const currentBoss = (allBosses[group] || bosses).find(b=>b.id===id);
-    const secs = currentBoss?.respawnSecs != null
-      ? currentBoss.respawnSecs
-      : Math.floor(((currentBoss?.minR||30) + Math.random()*((currentBoss?.maxR||90)-(currentBoss?.minR||30)))*60);
+    // Folkvang overrides: interserver = 1h59m (7140s), normal = 7h59m (28740s)
+    const secs = group === "folkvang_interserver"
+      ? 7140
+      : group === "folkvang_normal"
+        ? 28740
+        : currentBoss?.respawnSecs != null
+          ? currentBoss.respawnSecs
+          : Math.floor(((currentBoss?.minR||30) + Math.random()*((currentBoss?.maxR||90)-(currentBoss?.minR||30)))*60);
 
     // Update local state
     setter(prev=>prev.map(b=>b.id===id ? {...b, secs, elapsed:0} : b));
@@ -2877,20 +2882,41 @@ function AppInner() {
                 </div>
               )}
               <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"22px"}}>
-                <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#f1f5f9",marginBottom:16,letterSpacing:"0.04em"}}>🏰 Guild Settings</h3>
-                <div style={{marginBottom:13}}>
-                  <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Guild Name</label>
-                  <input className="dark-input" value={guildName} onChange={e=>setGuildName(e.target.value.toUpperCase())} disabled={!isLeader} placeholder="e.g. RAMPAGE" />
+                <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#f1f5f9",marginBottom:16,letterSpacing:"0.04em"}}>🏰 About Rampage</h3>
+                {/* Guild identity block */}
+                <div style={{background:"rgba(251,191,36,0.07)",border:"1px solid rgba(251,191,36,0.2)",borderRadius:14,padding:"16px 18px",marginBottom:16}}>
+                  <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:22,fontWeight:800,letterSpacing:"0.12em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",marginBottom:6}}>{guildName}</div>
+                  {(isAdmin||isLeader) ? (
+                    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                      <div>
+                        <label style={{display:"block",color:"#3d5070",fontSize:10,fontWeight:700,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.07em"}}>Guild / Branding Name</label>
+                        <input className="dark-input" value={guildName} onChange={e=>setGuildName(e.target.value.toUpperCase())} placeholder="e.g. RAMPAGE" style={{fontSize:13}} />
+                      </div>
+                      <div>
+                        <label style={{display:"block",color:"#3d5070",fontSize:10,fontWeight:700,marginBottom:4,textTransform:"uppercase",letterSpacing:"0.07em"}}>Leader Name</label>
+                        <input className="dark-input" value={creatorsName} onChange={e=>setCreatorsName(e.target.value)} placeholder="e.g. Valiant" style={{fontSize:13}} />
+                      </div>
+                      <button className="btn" onClick={async()=>{
+                        await supabase.from("settings").upsert({key:"guild_name",value:guildName},{onConflict:"key"});
+                        await supabase.from("settings").upsert({key:"creators_name",value:creatorsName},{onConflict:"key"});
+                        showToast("✅ Guild info saved!");
+                      }} style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"10px 22px",fontSize:13,alignSelf:"flex-start"}}>💾 Save</button>
+                    </div>
+                  ) : (
+                    <div style={{fontSize:13,color:"#94a3b8",lineHeight:1.8}}>
+                      <div><span style={{color:"#3d5070",fontSize:10.5,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Leader · </span><span style={{color:"#fbbf24",fontWeight:700}}>{creatorsName}</span></div>
+                      <div style={{marginTop:4,fontSize:11,color:"#3d5070"}}>Contact your Leader or Admin to update guild info.</div>
+                    </div>
+                  )}
                 </div>
                 <div style={{marginBottom:13}}>
                   <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Season Text <span style={{color:"#60a5fa",fontWeight:400,textTransform:"none",fontSize:10}}>(shown on login screen)</span></label>
-                  <input className="dark-input" value={seasonText} onChange={e=>setSeasonText(e.target.value.toUpperCase())} disabled={!isLeader} placeholder="e.g. SEASON 12" />
+                  <input className="dark-input" value={seasonText} onChange={e=>setSeasonText(e.target.value.toUpperCase())} disabled={!isLeader&&!isAdmin} placeholder="e.g. SEASON 12" />
                 </div>
-                {isLeader&&<button className="btn" onClick={async()=>{
+                {(isLeader||isAdmin)&&<button className="btn" onClick={async()=>{
                   await supabase.from("settings").upsert({key:"season_text",value:seasonText},{onConflict:"key"});
-                  await supabase.from("settings").upsert({key:"guild_name",value:guildName},{onConflict:"key"});
-                  showToast("✅ Settings saved!");
-                }} style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"10px 22px",fontSize:13,marginTop:4}}>Save Changes</button>}
+                  showToast("✅ Season text saved!");
+                }} style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"10px 22px",fontSize:13,marginTop:4}}>Save Season</button>}
               </div>
 
               <div style={{background:"rgba(88,101,242,0.06)",border:"1px solid rgba(88,101,242,0.22)",borderRadius:18,padding:"22px"}}>
@@ -3036,7 +3062,8 @@ function AppInner() {
                 </button>
               </div>
 
-              {/* Excel Export */}
+              {/* Excel Export — Admin & Leader only */}
+              {(isAdmin||isLeader)&&(
               <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"22px"}}>
                 <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#f1f5f9",marginBottom:6,letterSpacing:"0.04em"}}>📊 Data Export</h3>
                 <p style={{color:"#3d5070",fontSize:11.5,marginBottom:16,lineHeight:1.6}}>Export all guild data to Excel — members, events, attendance, auction winners. Auto-exports weekly.</p>
@@ -3046,6 +3073,7 @@ function AppInner() {
                 </button>
                 <p style={{color:"#3d5070",fontSize:10.5,marginTop:10}}>Includes: Members · Events · Attendance Detail · Auction Winners</p>
               </div>
+              )}
 
               {/* Leadership */}
               <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"22px",gridColumn:"1/-1"}}>
