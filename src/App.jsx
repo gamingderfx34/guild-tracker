@@ -283,13 +283,15 @@ function AppInner() {
   const [uploading, setUploading]     = useState(false);
   const [uploadMsg, setUploadMsg]     = useState("");
   const [members, setMembers]         = useState([]);
-  const [bosses, setBosses]           = useState(()=>lsGet("rampageBosses", DEFAULT_BOSSES));
-  const [myrkrheimBosses, setMyrkrheimBosses]       = useState(()=>lsGet("rampageMyrkrheim", DEFAULT_MYRKRHEIM));
-  const [folkvangNormal, setFolkvangNormal] = useState(()=>{ const s=lsGet("rampageFolkvangN_v2",null); return (s&&s.length>0&&s[0].bossKey)?s:DEFAULT_FOLKVANG_NORMAL; });
-  const [folkvangInterserver, setFolkvangInterserver] = useState(()=>{ const s=lsGet("rampageFolkvangI_v2",null); return (s&&s.length>0&&s[0].bossKey)?s:DEFAULT_FOLKVANG_INTERSERVER; });
-  const [canyonBosses, setCanyonBosses]             = useState(()=>lsGet("rampageCanyon", DEFAULT_CANYON));
-  const [lindwurmBosses, setLindwurmBosses]         = useState(()=>lsGet("rampageLindwurm", DEFAULT_LINDWURM));
-  const [hildersBosses, setHildersBosses]           = useState(()=>lsGet("rampageHilders", DEFAULT_HILDERS));
+  // Boss state — always start from defaults, then Supabase hydrates images + timers
+  // Never trust localStorage for images (stale null values block Supabase sync)
+  const [bosses, setBosses]           = useState(()=>{ const s=lsGet("rampageBosses",DEFAULT_BOSSES); return DEFAULT_BOSSES.map(d=>{ const cached=s.find(b=>b.id===d.id); return cached?{...d,secs:cached.secs||0,elapsed:cached.elapsed||0,image:null}:d; }); });
+  const [myrkrheimBosses, setMyrkrheimBosses] = useState(()=>{ const s=lsGet("rampageMyrkrheim",DEFAULT_MYRKRHEIM); return DEFAULT_MYRKRHEIM.map(d=>{ const cached=s.find(b=>b.id===d.id); return cached?{...d,secs:cached.secs||0,elapsed:cached.elapsed||0,image:null}:d; }); });
+  const [folkvangNormal, setFolkvangNormal] = useState(()=>{ const s=lsGet("rampageFolkvangN_v2",null); return (s&&s.length>0&&s[0].bossKey)?s.map(b=>({...b,image:null})):DEFAULT_FOLKVANG_NORMAL; });
+  const [folkvangInterserver, setFolkvangInterserver] = useState(()=>{ const s=lsGet("rampageFolkvangI_v2",null); return (s&&s.length>0&&s[0].bossKey)?s.map(b=>({...b,image:null})):DEFAULT_FOLKVANG_INTERSERVER; });
+  const [canyonBosses, setCanyonBosses]   = useState(()=>{ const s=lsGet("rampageCanyon",DEFAULT_CANYON); return DEFAULT_CANYON.map(d=>{ const cached=s.find(b=>b.id===d.id); return cached?{...d,secs:cached.secs||0,elapsed:cached.elapsed||0,image:null}:d; }); });
+  const [lindwurmBosses, setLindwurmBosses] = useState(()=>{ const s=lsGet("rampageLindwurm",DEFAULT_LINDWURM); return DEFAULT_LINDWURM.map(d=>{ const cached=s.find(b=>b.id===d.id); return cached?{...d,secs:cached.secs||0,elapsed:cached.elapsed||0,image:null}:d; }); });
+  const [hildersBosses, setHildersBosses] = useState(()=>{ const s=lsGet("rampageHilders",DEFAULT_HILDERS); return DEFAULT_HILDERS.map(d=>{ const cached=s.find(b=>b.id===d.id); return cached?{...d,secs:cached.secs||0,elapsed:cached.elapsed||0,image:null}:d; }); });
   const [bossTimerModal, setBossTimerModal]         = useState(null); // {id, group}
   const [timerHH, setTimerHH]   = useState("0");
   const [timerMM, setTimerMM]   = useState("0");
@@ -398,6 +400,55 @@ function AppInner() {
       });
     });
   },[]);
+
+  // ── Migrate old timestamp-based boss IDs to deterministic IDs ────────────
+  // Runs once on mount — fixes IDs like "live4_Lv.68..._ch3_1716123456789"
+  // to "live4_lv_68_villainous_jotunn_ch3" so all users share the same ID.
+  useEffect(()=>{
+    const migrated = lsGet("rampageBossIdMigrated_v2", false);
+    if (migrated) return;
+
+    const groupMap = [
+      { key:"live4",                getter:()=>bosses,              setter:setBosses              },
+      { key:"myrkrheim",            getter:()=>myrkrheimBosses,     setter:setMyrkrheimBosses     },
+      { key:"canyon",               getter:()=>canyonBosses,        setter:setCanyonBosses        },
+      { key:"lindwurm",             getter:()=>lindwurmBosses,      setter:setLindwurmBosses      },
+      { key:"hilders",              getter:()=>hildersBosses,       setter:setHildersBosses       },
+      { key:"folkvang_normal",      getter:()=>folkvangNormal,      setter:setFolkvangNormal      },
+      { key:"folkvang_interserver", getter:()=>folkvangInterserver, setter:setFolkvangInterserver },
+    ];
+
+    const isTimestampId = (id) => /_\d{10,}$/.test(id); // ends with _1716123456789
+
+    groupMap.forEach(({ key, getter, setter }) => {
+      const list = getter();
+      const hasOldIds = list.some(b => isTimestampId(b.id));
+      if (!hasOldIds) return;
+
+      // Rebuild with deterministic IDs
+      const fixed = list.map(b => {
+        if (!isTimestampId(b.id)) return b;
+        const safeSlug = b.name.replace(/[^a-zA-Z0-9]/g,"_").toLowerCase().slice(0,30);
+        const newId = `${key}_${safeSlug}_ch${b.channel}`;
+        return { ...b, id: newId };
+      });
+      setter(fixed);
+
+      // Publish channel list to Supabase so all users pick it up
+      const bossNames = [...new Set(fixed.map(b=>b.name))];
+      bossNames.forEach(bossName => {
+        const safeSlug = bossName.replace(/[^a-zA-Z0-9]/g,"_").toLowerCase().slice(0,30);
+        const channels = fixed.filter(b=>b.name===bossName).map(b=>({ id:b.id, channel:b.channel, name:b.name, group:key }));
+        supabase.from("settings").upsert(
+          { key:`boss_channels_${key}_${safeSlug}`, value: JSON.stringify(channels) },
+          { onConflict:"key" }
+        ).catch(()=>{});
+      });
+    });
+
+    lsSet("rampageBossIdMigrated_v2", true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Play boss alert sound ─────────────────────────────────────────────────
   const playBossAlert = useCallback((soundType) => {
@@ -595,8 +646,9 @@ function AppInner() {
             ? { ...b,
                 secs:         secs         != null ? secs         : b.secs,
                 elapsed:      elapsed      != null ? elapsed      : b.elapsed,
-                image:        image !== undefined
-                  ? (image && image.startsWith('http') ? `${image.split('?')[0]}?v=${Date.now()}` : image)
+                // Always overwrite image from DB — null means admin removed it
+                image: image !== undefined
+                  ? (image && image.startsWith('http') ? `${image.split('?')[0]}?v=${Date.now()}` : image || null)
                   : b.image,
                 channelLabel: row.channel_label != null ? row.channel_label : b.channelLabel,
               }
@@ -701,7 +753,6 @@ function AppInner() {
           if (row.key === "maintenance_mode") setMaintenanceMode(row.value === "true");
           if (row.key === "background_image") setBgImage(row.value || "");
           if (row.key === "guild_logo" && row.value) {
-            // Strip any stale ?v= param and add a fresh one so browser re-fetches
             const baseLogoUrl = row.value.split('?')[0];
             setLogoUrl(`${baseLogoUrl}?v=${Date.now()}`);
           }
@@ -709,7 +760,7 @@ function AppInner() {
           if (row.key && row.key.startsWith("boss_names_") && row.value) {
             try {
               const group = row.key.replace("boss_names_", "");
-              const names = JSON.parse(row.value); // [{id, name}]
+              const names = JSON.parse(row.value);
               const setter = bossSettersRef.current[group];
               if (setter && Array.isArray(names)) {
                 setter(prev=>prev.map(b=>{
@@ -717,6 +768,29 @@ function AppInner() {
                   return found ? {...b, name:found.name} : b;
                 }));
               }
+            } catch {}
+          }
+          // Restore extra channels added by admin — so all users see same channel list
+          if (row.key && row.key.startsWith("boss_channels_") && row.value) {
+            try {
+              const channels = JSON.parse(row.value); // [{id, channel, name, group}]
+              if (!Array.isArray(channels) || channels.length === 0) return;
+              const group = channels[0].group;
+              const setter = bossSettersRef.current[group];
+              if (!setter) return;
+              setter(prev => {
+                let updated = [...prev];
+                channels.forEach(ch => {
+                  // Only add if not already present (match by id)
+                  if (!updated.find(b => b.id === ch.id)) {
+                    const template = updated.find(b => b.name === ch.name);
+                    if (template) {
+                      updated = [...updated, { ...template, id: ch.id, channel: ch.channel, secs: 0, elapsed: 0, image: null }];
+                    }
+                  }
+                });
+                return updated;
+              });
             } catch {}
           }
         });
@@ -730,7 +804,6 @@ function AppInner() {
       const { data, error } = await supabase.from("boss_timers").select("*");
       if (error || !data) return;
 
-      // Build a map of setter functions directly (not via ref — avoids timing issues)
       const setterMap = {
         live4: setBosses,
         myrkrheim: setMyrkrheimBosses,
@@ -741,7 +814,6 @@ function AppInner() {
         hilders: setHildersBosses,
       };
 
-      // Group rows by boss group so we do one setState per group (not one per row)
       const byGroup = {};
       data.forEach(row => {
         if (!byGroup[row.group]) byGroup[row.group] = [];
@@ -760,11 +832,11 @@ function AppInner() {
                 ...b,
                 secs:    row.secs    != null ? row.secs    : b.secs,
                 elapsed: row.elapsed != null ? row.elapsed : b.elapsed,
-                // Always use DB image as source of truth — overrides local cache
-                // Add cache-buster to storage URLs so browser always fetches latest
-                image:   row.image
+                // Always use DB image — even null (means admin removed it)
+                // Add cache-buster only for http URLs
+                image: row.image
                   ? (row.image.startsWith('http') ? `${row.image.split('?')[0]}?v=${Date.now()}` : row.image)
-                  : b.image,
+                  : null,
                 channelLabel: row.channel_label ? row.channel_label : b.channelLabel,
               };
             });
@@ -1109,22 +1181,66 @@ function AppInner() {
     getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,respawnSecs:secs}:b));
   };
 
-  // Add channel for a boss group
+  // Add channel for a boss group — deterministic ID so all users share same boss_id
   const handleAddChannel = (group, bossBaseName, baseColor)=>{
     const setter = getSetterByGroup(group);
+    let newBoss = null;
     setter(prev=>{
       const maxCh = prev.filter(b=>b.name===bossBaseName).reduce((m,b)=>Math.max(m,b.channel),0);
       const newCh = maxCh+1;
       const template = prev.find(b=>b.name===bossBaseName);
       if(!template) return prev;
-      return [...prev, {...template, id:`${group}_${bossBaseName}_ch${newCh}_${Date.now()}`, channel:newCh, secs:0, elapsed:0}];
+      // Deterministic ID: no timestamp — same across all browsers/users
+      const safeNameSlug = bossBaseName.replace(/[^a-zA-Z0-9]/g,"_").toLowerCase().slice(0,30);
+      const newId = `${group}_${safeNameSlug}_ch${newCh}`;
+      newBoss = {...template, id:newId, channel:newCh, secs:0, elapsed:0, image:null};
+      return [...prev, newBoss];
     });
-    showToast(`✅ Channel ${group} added!`);
+    // Persist updated channel list to Supabase so all users get the new channel
+    setTimeout(()=>{
+      const allBossMap = {
+        live4: bosses, myrkrheim: myrkrheimBosses,
+        folkvang_normal: folkvangNormal, folkvang_interserver: folkvangInterserver,
+        canyon: canyonBosses, lindwurm: lindwurmBosses, hilders: hildersBosses,
+      };
+      const currentList = allBossMap[group] || [];
+      const safeNameSlug2 = bossBaseName.replace(/[^a-zA-Z0-9]/g,"_").toLowerCase().slice(0,30);
+      const maxCh2 = currentList.filter(b=>b.name===bossBaseName).reduce((m,b)=>Math.max(m,b.channel),0);
+      const channelsForBoss = [
+        ...currentList.filter(b=>b.name===bossBaseName),
+        // include the new one being added (state hasn't updated yet in this closure)
+      ].map(b=>({ id:b.id, channel:b.channel, name:b.name, group:b.group }));
+      // Add the brand-new channel entry
+      const newId2 = `${group}_${safeNameSlug2}_ch${maxCh2+1}`;
+      if (!channelsForBoss.find(b=>b.id===newId2)) {
+        channelsForBoss.push({ id:newId2, channel:maxCh2+1, name:bossBaseName, group });
+      }
+      supabase.from("settings").upsert(
+        { key:`boss_channels_${group}_${safeNameSlug2}`, value: JSON.stringify(channelsForBoss) },
+        { onConflict:"key" }
+      ).catch(()=>{});
+    }, 100);
+    showToast(`✅ Channel added!`);
   };
 
-  // Remove a channel
+  // Remove a channel — also remove from Supabase boss_timers + update settings
   const handleRemoveChannel = (id, group)=>{
-    getSetterByGroup(group)(prev=>prev.filter(b=>b.id!==id));
+    getSetterByGroup(group)(prev=>{
+      const updated = prev.filter(b=>b.id!==id);
+      // Persist updated channel list for all boss names in this group
+      const bossNames = [...new Set(updated.map(b=>b.name))];
+      bossNames.forEach(bossName=>{
+        const safeSlug = bossName.replace(/[^a-zA-Z0-9]/g,"_").toLowerCase().slice(0,30);
+        const remaining = updated.filter(b=>b.name===bossName).map(b=>({ id:b.id, channel:b.channel, name:b.name, group:b.group }));
+        supabase.from("settings").upsert(
+          { key:`boss_channels_${group}_${safeSlug}`, value: JSON.stringify(remaining) },
+          { onConflict:"key" }
+        ).catch(()=>{});
+      });
+      return updated;
+    });
+    // Delete from boss_timers DB too
+    supabase.from("boss_timers").delete().eq("boss_id", id).catch(()=>{});
     showToast("🗑️ Channel removed","warn");
   };
 
