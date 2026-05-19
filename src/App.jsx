@@ -327,6 +327,9 @@ function AppInner() {
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [seasonText, setSeasonText]           = useState("SEASON 12");
   const [guildName, setGuildName]             = useState("RAMPAGE");
+  const [creatorsName, setCreatorsName]       = useState("gamingderfx");
+  const [appVersion, setAppVersion]           = useState(APP_VERSION);
+  const [logoSize, setLogoSize]               = useState(76);
   const [bossScheduleCollapsed, setBossScheduleCollapsed] = useState(true);
 
   // ── Boss alert sound system ──────────────────────────────────────────────
@@ -760,6 +763,9 @@ function AppInner() {
             const baseLogoUrl = row.value.split('?')[0];
             setLogoUrl(`${baseLogoUrl}?v=${Date.now()}`);
           }
+          if (row.key === "creators_name" && row.value) setCreatorsName(row.value);
+          if (row.key === "app_version" && row.value) setAppVersion(row.value);
+          if (row.key === "logo_size" && row.value) setLogoSize(parseInt(row.value)||76);
           // Restore boss names saved by admin
           if (row.key && row.key.startsWith("boss_names_") && row.value) {
             try {
@@ -1991,12 +1997,13 @@ function AppInner() {
           {/* Logo */}
           <div style={{padding:collapsed?"18px 0":"22px 20px 16px",display:"flex",alignItems:"center",gap:12,justifyContent:collapsed?"center":"flex-start",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
             <div className="logo-ring" onClick={()=>setActiveNav("dashboard")} title="Go to Dashboard"
-              style={{width:50,height:50,borderRadius:"50%",border:"2px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.07)",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden",flexShrink:0,boxShadow:"0 0 24px rgba(251,191,36,0.18)"}}>
+              style={{width:Math.min(logoSize,76),height:Math.min(logoSize,76),borderRadius:"50%",border:"2px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.07)",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",overflow:"hidden",flexShrink:0,boxShadow:"0 0 24px rgba(251,191,36,0.18)"}}>
               <img src={logoUrl} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:"50%"}} onError={()=>setLogoErr(true)} />
             </div>
             {!collapsed&&<div>
               <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:20,fontWeight:700,letterSpacing:"0.12em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>{guildName}</div>
               <div style={{fontSize:9.5,color:"#3d5070",letterSpacing:"0.1em"}}>GUILD TRACKER · {seasonText}</div>
+              <div style={{fontSize:9,color:"#2d3a52",letterSpacing:"0.08em",marginTop:1}}>{creatorsName}</div>
             </div>}
           </div>
           
@@ -2056,7 +2063,7 @@ function AppInner() {
               <span style={{fontSize:15}}>🚪</span>
               <span className="sidebar-label">Sign Out</span>
             </button>
-            {!collapsed&&<div style={{textAlign:"center",fontSize:9,color:"#1e2a3a",letterSpacing:"0.06em",paddingTop:4}}>{APP_VERSION}</div>}
+            {!collapsed&&<div style={{textAlign:"center",fontSize:9,color:"#1e2a3a",letterSpacing:"0.06em",paddingTop:4}}>{appVersion}</div>}
           </div>
 
           {/* Collapse toggle */}
@@ -2762,6 +2769,106 @@ function AppInner() {
           {/* ── SETTINGS ── */}
           {activeNav==="settings"&&(
             <div className="page" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18,maxWidth:900}}>
+
+              {/* Guild Branding — Admin only */}
+              {isSuperAdmin&&(
+                <div style={{background:"rgba(99,102,241,0.06)",border:"1px solid rgba(99,102,241,0.2)",borderRadius:18,padding:"22px",gridColumn:"1/-1"}}>
+                  <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#a5b4fc",marginBottom:16,letterSpacing:"0.04em"}}>🎨 Guild Branding <span style={{fontSize:10,color:"#6366f1",fontWeight:600,background:"rgba(99,102,241,0.15)",padding:"2px 7px",borderRadius:4,marginLeft:6}}>ADMIN ONLY</span></h3>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+                    {/* Logo upload + size */}
+                    <div>
+                      <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Guild Logo</label>
+                      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+                        <div style={{width:logoSize,height:logoSize,borderRadius:"50%",border:"2px solid rgba(251,191,36,0.4)",background:"rgba(251,191,36,0.07)",overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 0 20px rgba(251,191,36,0.15)"}}>
+                          <img src={logoUrl} alt="Logo" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}} />
+                        </div>
+                        <div style={{flex:1}}>
+                          <label style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"9px 14px",borderRadius:10,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"'Exo 2',sans-serif",display:"inline-block",marginBottom:6}}>
+                            📷 Upload Logo
+                            <input type="file" accept="image/*" style={{display:"none"}} onChange={async e=>{
+                              const file=e.target.files?.[0]; if(!file) return;
+                              setUploading(true);
+                              try {
+                                const ext=file.name.split(".").pop();
+                                const path=`guild-logo-${Date.now()}.${ext}`;
+                                const {error}=await supabase.storage.from("asset").upload(path,file,{cacheControl:"3600",upsert:false});
+                                if(!error){
+                                  const {data:ud}=supabase.storage.from("asset").getPublicUrl(path);
+                                  const url=ud.publicUrl;
+                                  setLogoUrl(url);
+                                  await supabase.from("settings").upsert({key:"guild_logo",value:url},{onConflict:"key"});
+                                  showToast("🖼️ Logo updated for all members!");
+                                } else throw error;
+                              } catch {
+                                const reader=new FileReader();
+                                reader.onload=async ev=>{
+                                  const val=ev.target.result;
+                                  setLogoUrl(val);
+                                  await supabase.from("settings").upsert({key:"guild_logo",value:val},{onConflict:"key"});
+                                  showToast("🖼️ Logo updated!");
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                              setUploading(false);
+                            }} />
+                          </label>
+                          <p style={{fontSize:10,color:"#3d5070"}}>Min 76×76px · Max 256×256px</p>
+                        </div>
+                      </div>
+                      <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Logo Display Size</label>
+                      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                        {[76,96,128,160,192,256].map(sz=>(
+                          <button key={sz}
+                            onClick={async()=>{ setLogoSize(sz); await supabase.from("settings").upsert({key:"logo_size",value:String(sz)},{onConflict:"key"}); showToast(`Logo size set to ${sz}×${sz}`); }}
+                            style={{background:logoSize===sz?"rgba(99,102,241,0.25)":"rgba(255,255,255,0.05)",border:`1px solid ${logoSize===sz?"rgba(99,102,241,0.5)":"rgba(255,255,255,0.1)"}`,color:logoSize===sz?"#a5b4fc":"#3d5070",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:11,fontFamily:"'Exo 2',sans-serif",fontWeight:700,transition:"all 0.15s"}}>
+                            {sz}px
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Text branding */}
+                    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                      <div>
+                        <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Guild Name</label>
+                        <input className="dark-input" value={guildName} onChange={e=>setGuildName(e.target.value.toUpperCase())} placeholder="e.g. RAMPAGE" />
+                      </div>
+                      <div>
+                        <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Version #</label>
+                        <input className="dark-input" value={appVersion} onChange={e=>setAppVersion(e.target.value)} placeholder="e.g. v2.6.0" />
+                      </div>
+                      <div>
+                        <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Creator's Name <span style={{color:"#60a5fa",fontWeight:400,textTransform:"none",fontSize:10}}>(shown on login &amp; sidebar)</span></label>
+                        <input className="dark-input" value={creatorsName} onChange={e=>setCreatorsName(e.target.value)} placeholder="e.g. gamingderfx" />
+                      </div>
+                      <div>
+                        <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Season Text</label>
+                        <input className="dark-input" value={seasonText} onChange={e=>setSeasonText(e.target.value.toUpperCase())} placeholder="e.g. SEASON 12" />
+                      </div>
+                      <button className="btn" onClick={async()=>{
+                        await supabase.from("settings").upsert({key:"guild_name",value:guildName},{onConflict:"key"});
+                        await supabase.from("settings").upsert({key:"season_text",value:seasonText},{onConflict:"key"});
+                        await supabase.from("settings").upsert({key:"creators_name",value:creatorsName},{onConflict:"key"});
+                        await supabase.from("settings").upsert({key:"app_version",value:appVersion},{onConflict:"key"});
+                        showToast("✅ Branding saved — visible to all users!");
+                      }} style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"11px 22px",fontSize:13,marginTop:"auto"}}>💾 Save Branding</button>
+                    </div>
+                  </div>
+                  {/* Live preview */}
+                  <div style={{marginTop:16,background:"rgba(0,0,0,0.2)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"14px 18px"}}>
+                    <div style={{fontSize:10,color:"#3d5070",letterSpacing:"0.08em",marginBottom:10,fontWeight:700,textTransform:"uppercase"}}>Live Preview — Sidebar Header</div>
+                    <div style={{display:"flex",alignItems:"center",gap:12}}>
+                      <div style={{width:Math.min(logoSize,56),height:Math.min(logoSize,56),borderRadius:"50%",border:"2px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.07)",overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        <img src={logoUrl} alt="preview" style={{width:"100%",height:"100%",objectFit:"cover"}} onError={e=>{e.target.style.display="none";}} />
+                      </div>
+                      <div>
+                        <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:16,fontWeight:700,letterSpacing:"0.12em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>{guildName}</div>
+                        <div style={{fontSize:9,color:"#3d5070",letterSpacing:"0.1em"}}>GUILD TRACKER · {seasonText}</div>
+                        <div style={{fontSize:8.5,color:"#2d3a52",letterSpacing:"0.08em"}}>{creatorsName}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"22px"}}>
                 <h3 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:17,fontWeight:700,color:"#f1f5f9",marginBottom:16,letterSpacing:"0.04em"}}>🏰 Guild Settings</h3>
                 <div style={{marginBottom:13}}>
@@ -4244,12 +4351,12 @@ function AuthScreen({ page, setPage, loginForm, setLoginForm, regForm, setRegFor
 
         <div className="auth-card">
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",marginBottom:28}}>
-            <div className="floating-icon" style={{width:72,height:72,borderRadius:"50%",border:"2px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.07)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14,boxShadow:"0 0 40px rgba(251,191,36,0.2)"}}>
+            <div className="floating-icon" style={{width:Math.min(logoSize,96),height:Math.min(logoSize,96),borderRadius:"50%",border:"2px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.07)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14,boxShadow:"0 0 40px rgba(251,191,36,0.2)"}}>
               <img src={MOCK_LOGO} alt="Rampage" style={{width:"80%",height:"80%",objectFit:"contain",borderRadius:"50%"}} onError={e=>{e.target.style.display="none";}} />
             </div>
             <h1 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:48,fontWeight:700,letterSpacing:"0.16em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",lineHeight:1,textAlign:"center"}}>{guildName}</h1>
             <p style={{color:"#2d3a52",fontSize:10.5,letterSpacing:"0.12em",marginTop:6,textAlign:"center"}}>GUILD TRACKER · {seasonText}</p>
-            <p style={{color:"#2d3a52",fontSize:10.5,letterSpacing:"0.12em",marginTop:3,textAlign:"center"}}>Created by : <span style={{color:"#f59e0b",fontWeight:700}}>gamingderfx</span></p>
+            <p style={{color:"#2d3a52",fontSize:10.5,letterSpacing:"0.12em",marginTop:3,textAlign:"center"}}>Created by : <span style={{color:"#f59e0b",fontWeight:700}}>{creatorsName}</span></p>
           </div>
 
           {/* Forgot Password modal overlay */}
