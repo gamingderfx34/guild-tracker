@@ -325,6 +325,7 @@ function AppInner() {
   const [bossImageModal, setBossImageModal] = useState(null);
   const [bgImage, setBgImage]               = useState("");
   const [maintenanceMode, setMaintenanceMode] = useState(false);
+  const [seasonText, setSeasonText]           = useState("SEASON 12");
   const [bossScheduleCollapsed, setBossScheduleCollapsed] = useState(true);
 
   // ── Boss alert sound system ──────────────────────────────────────────────
@@ -752,6 +753,7 @@ function AppInner() {
         data.forEach(row=>{
           if (row.key === "maintenance_mode") setMaintenanceMode(row.value === "true");
           if (row.key === "background_image") setBgImage(row.value || "");
+          if (row.key === "season_text" && row.value) setSeasonText(row.value);
           if (row.key === "guild_logo" && row.value) {
             const baseLogoUrl = row.value.split('?')[0];
             setLogoUrl(`${baseLogoUrl}?v=${Date.now()}`);
@@ -1990,7 +1992,7 @@ function AppInner() {
             </div>
             {!collapsed&&<div>
               <div style={{fontFamily:"'Rajdhani',sans-serif",fontSize:20,fontWeight:700,letterSpacing:"0.12em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent"}}>RAMPAGE</div>
-              <div style={{fontSize:9.5,color:"#3d5070",letterSpacing:"0.1em"}}>GUILD TRACKER</div>
+              <div style={{fontSize:9.5,color:"#3d5070",letterSpacing:"0.1em"}}>GUILD TRACKER · {seasonText}</div>
             </div>}
           </div>
           
@@ -2763,10 +2765,13 @@ function AppInner() {
                   <input className="dark-input" defaultValue="RAMPAGE" disabled={!isLeader} />
                 </div>
                 <div style={{marginBottom:13}}>
-                  <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Season</label>
-                  <input className="dark-input" defaultValue="Season 12" disabled={!isLeader} />
+                  <label style={{display:"block",color:"#3d5070",fontSize:10.5,fontWeight:700,marginBottom:6,textTransform:"uppercase",letterSpacing:"0.08em"}}>Season Text <span style={{color:"#60a5fa",fontWeight:400,textTransform:"none",fontSize:10}}>(shown on login screen)</span></label>
+                  <input className="dark-input" value={seasonText} onChange={e=>setSeasonText(e.target.value.toUpperCase())} disabled={!isLeader} placeholder="e.g. SEASON 12" />
                 </div>
-                {isLeader&&<button className="btn" style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"10px 22px",fontSize:13,marginTop:4}}>Save Changes</button>}
+                {isLeader&&<button className="btn" onClick={async()=>{
+                  await supabase.from("settings").upsert({key:"season_text",value:seasonText},{onConflict:"key"});
+                  showToast("✅ Season text saved!");
+                }} style={{background:"linear-gradient(135deg,#4f46e5,#6366f1)",color:"#fff",padding:"10px 22px",fontSize:13,marginTop:4}}>Save Changes</button>}
               </div>
 
               <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:18,padding:"22px"}}>
@@ -4237,8 +4242,9 @@ function AuthScreen({ page, setPage, loginForm, setLoginForm, regForm, setRegFor
             <div className="floating-icon" style={{width:72,height:72,borderRadius:"50%",border:"2px solid rgba(251,191,36,0.5)",background:"rgba(251,191,36,0.07)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14,boxShadow:"0 0 40px rgba(251,191,36,0.2)"}}>
               <img src={MOCK_LOGO} alt="Rampage" style={{width:"80%",height:"80%",objectFit:"contain",borderRadius:"50%"}} onError={e=>{e.target.style.display="none";}} />
             </div>
-            <h1 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:32,fontWeight:700,letterSpacing:"0.16em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",lineHeight:1}}>RAMPAGE</h1>
-            <p style={{color:"#2d3a52",fontSize:10.5,letterSpacing:"0.12em",marginTop:4}}>GUILD TRACKER · SEASON 12</p>
+            <h1 style={{fontFamily:"'Rajdhani',sans-serif",fontSize:48,fontWeight:700,letterSpacing:"0.16em",background:"linear-gradient(135deg,#fbbf24,#f59e0b)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",lineHeight:1,textAlign:"center"}}>RAMPAGE</h1>
+            <p style={{color:"#2d3a52",fontSize:10.5,letterSpacing:"0.12em",marginTop:6,textAlign:"center"}}>GUILD TRACKER · {seasonText}</p>
+            <p style={{color:"#2d3a52",fontSize:10.5,letterSpacing:"0.12em",marginTop:3,textAlign:"center"}}>Created by : <span style={{color:"#f59e0b",fontWeight:700}}>gamingderfx</span></p>
           </div>
 
           {/* Forgot Password modal overlay */}
