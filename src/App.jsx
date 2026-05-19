@@ -798,7 +798,7 @@ function AppInner() {
           if (dbImages[b.id] === b.image) continue; // already in sync — skip
           try {
             await supabase.from("boss_timers").upsert(
-              { id:b.id, boss_id:b.id, group:key, image:b.image, secs:b.secs||0, elapsed:b.elapsed||0, updated_at:new Date().toISOString() },
+              { boss_id:b.id, group:key, image:b.image, secs:b.secs||0, elapsed:b.elapsed||0, updated_at:new Date().toISOString() },
               { onConflict:"boss_id" }
             );
           } catch(e) { console.warn("syncLocalImages upsert error:", e); }
@@ -1058,7 +1058,7 @@ function AppInner() {
 
     // Sync to Supabase OUTSIDE setter (safe async side-effect)
     supabase.from("boss_timers")
-      .upsert({id, boss_id:id, group, secs, elapsed:0, updated_at:new Date().toISOString()}, {onConflict:"boss_id"})
+      .upsert({ boss_id:id, group, secs, elapsed:0, updated_at:new Date().toISOString()}, {onConflict:"boss_id"})
       .catch(()=>{});
 
     if(discordConnected) showToast("📢 Discord notified: Boss killed!","info");
@@ -1069,7 +1069,7 @@ function AppInner() {
   const handleResetToZero = (id, group="live4")=>{
     setKillFlash(id); setTimeout(()=>setKillFlash(null),700);
     getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,secs:0,elapsed:0}:b));
-    supabase.from("boss_timers").upsert({id, boss_id:id, group, secs:0, elapsed:0, updated_at:new Date().toISOString()}, {onConflict:"boss_id"}).catch(()=>{});
+    supabase.from("boss_timers").upsert({ boss_id:id, group, secs:0, elapsed:0, updated_at:new Date().toISOString()}, {onConflict:"boss_id"}).catch(()=>{});
   };
 
   const handleSetManual = ()=>{
@@ -1085,7 +1085,7 @@ function AppInner() {
     const {id,group} = bossTimerModal;
     const totalSecs = (parseInt(timerHH)||0)*3600 + (parseInt(timerMM)||0)*60 + (parseInt(timerSS)||0);
     getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,secs:totalSecs,elapsed:0}:b));
-    supabase.from("boss_timers").upsert({id, boss_id:id, group, secs:totalSecs, elapsed:0, updated_at:new Date().toISOString()}, {onConflict:"boss_id"}).catch(()=>{});
+    supabase.from("boss_timers").upsert({ boss_id:id, group, secs:totalSecs, elapsed:0, updated_at:new Date().toISOString()}, {onConflict:"boss_id"}).catch(()=>{});
     setBossTimerModal(null);
   };
 
@@ -1134,7 +1134,7 @@ function AppInner() {
     getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,channelLabel:label.trim()}:b));
     // Persist to Supabase boss_timers so all users see the new label
     supabase.from("boss_timers")
-      .upsert({id, boss_id:id, group, channel_label:label.trim(), updated_at:new Date().toISOString()}, {onConflict:"boss_id"})
+      .upsert({ boss_id:id, group, channel_label:label.trim(), updated_at:new Date().toISOString()}, {onConflict:"boss_id"})
       .then(()=>{}).catch(()=>{});
     showToast("✅ Channel renamed!");
   };
@@ -1177,7 +1177,6 @@ function AppInner() {
       // 3. Upsert to boss_timers — triggers real-time for all users
       const { error: upsertErr } = await supabase.from("boss_timers").upsert(
         {
-          id: id,
           boss_id: id,
           "group": group,
           image: imageUrl,
@@ -1305,7 +1304,7 @@ function AppInner() {
     };
     const curBoss = (allBossMap[group]||bosses).find(x=>x.id===id);
     await supabase.from("boss_timers").upsert(
-      { id: id, boss_id: id, "group": group, image: null, secs: curBoss?.secs||0, elapsed: curBoss?.elapsed||0, updated_at: new Date().toISOString() },
+      { boss_id: id, "group": group, image: null, secs: curBoss?.secs||0, elapsed: curBoss?.elapsed||0, updated_at: new Date().toISOString() },
       { onConflict: "boss_id" }
     ).catch(()=>{});
 
