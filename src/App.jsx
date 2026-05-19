@@ -1196,12 +1196,36 @@ function AppInner() {
 
     try {
       // ── Try Supabase Storage first ──────────────────────────────────────
-      const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+      // Resize image to max 256x256 before upload to keep storage lean
+      const resizedFile = await new Promise((resolve) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+          const MAX = 256;
+          const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+          const w = Math.round(img.width * scale);
+          const h = Math.round(img.height * scale);
+          const canvas = document.createElement("canvas");
+          canvas.width = w; canvas.height = h;
+          canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+          URL.revokeObjectURL(url);
+          canvas.toBlob(blob => resolve(blob ? new File([blob], file.name, {type:"image/webp"}) : file), "image/webp", 0.85);
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+        img.src = url;
+      });
+
+      const ext = "webp";
       // Use fixed path (no timestamp) — stable URL, browser caches correctly
       const path = `${group}/${id}.${ext}`;
+
+      // Get the current Supabase session to ensure auth headers are sent
+      const { data: sessionData } = await supabase.auth.getSession();
+      const isAuthenticated = !!sessionData?.session;
+
       const { error: upErr } = await supabase.storage
         .from('boss-images')
-        .upload(path, file, { upsert: true, contentType: file.type });
+        .upload(path, resizedFile, { upsert: true, contentType: "image/webp" });
 
       if (!upErr) {
         const { data: urlData } = supabase.storage.from('boss-images').getPublicUrl(path);
@@ -1219,22 +1243,31 @@ function AppInner() {
           }
         }
       } else {
-        console.warn("Storage upload failed, falling back to base64:", upErr.message);
+        // Provide actionable error messages instead of silently falling back
+        const errMsg = upErr.message || "";
+        if (!isAuthenticated) {
+          console.warn("Storage upload failed — not authenticated:", errMsg);
+          showToast("⚠️ Storage: not logged in. Using base64 fallback.","warn");
+        } else if (errMsg.includes("row-level security") || errMsg.includes("policy") || upErr.statusCode === 403) {
+          console.warn("Storage upload failed — RLS policy blocked upload:", errMsg);
+          showToast("⚠️ Storage policy blocked upload. Fix: Supabase → Storage → boss-images → Policies → add INSERT for authenticated users.","warn");
+        } else {
+          console.warn("Storage upload failed:", errMsg);
+          showToast("⚠️ Storage upload failed. Saving via base64 fallback.","warn");
+        }
       }
 
-      // ── Fallback: convert to base64 and store directly in boss_timers ──
-      // This always works regardless of Storage bucket permissions
-      showToast("⏳ Using base64 fallback (Storage unavailable)...","info");
+      // ── Fallback: convert resized image to base64 and store in boss_timers ──
       const reader = new FileReader();
       reader.onload = async (ev) => {
         const base64 = ev.target.result;
         const ok = await applyImage(base64);
         setBossImageModal(null);
-        if (ok) showToast("🖼️ Image saved — all users will see it!");
+        if (ok) showToast("🖼️ Image saved (base64) — all users will see it!");
         else showToast("🖼️ Image saved locally only","warn");
       };
       reader.onerror = () => showToast("❌ Could not read image file","error");
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(resizedFile);
 
     } catch(e) {
       console.error("Image upload exception:", e);
@@ -1249,6 +1282,33 @@ function AppInner() {
         reader.readAsDataURL(file);
       } catch { showToast(`❌ Upload failed: ${e.message}`,"error"); }
     }
+  };
+
+  // ── Remove boss image — resets back to default 👹 icon ───────────────────
+  const handleRemoveBossImage = async (id, group) => {
+    // 1. Clear local state
+    getSetterByGroup(group)(prev=>prev.map(b=>b.id===id?{...b,image:null}:b));
+
+    // 2. Try to delete from storage (best-effort)
+    const extensions = ["webp","png","jpg","jpeg","gif"];
+    for (const ext of extensions) {
+      const path = `${group}/${id}.${ext}`;
+      await supabase.storage.from('boss-images').remove([path]).catch(()=>{});
+    }
+
+    // 3. Clear image in DB
+    const allBossMap = {
+      live4: bosses, myrkrheim: myrkrheimBosses,
+      folkvang_normal: folkvangNormal, folkvang_interserver: folkvangInterserver,
+      canyon: canyonBosses, lindwurm: lindwurmBosses, hilders: hildersBosses,
+    };
+    const curBoss = (allBossMap[group]||bosses).find(x=>x.id===id);
+    await supabase.from("boss_timers").upsert(
+      { boss_id: id, "group": group, image: null, secs: curBoss?.secs||0, elapsed: curBoss?.elapsed||0, updated_at: new Date().toISOString() },
+      { onConflict: "boss_id" }
+    ).catch(()=>{});
+
+    showToast("🗑️ Boss image removed — default icon restored","warn");
   };
 
   // ── Members ───────────────────────────────────────────────────────────────
@@ -2054,6 +2114,7 @@ function AppInner() {
                 onReset={(id,group)=>handleResetToZero(id,group)}
                 onSetTimer={(id,group)=>openTimerModal(id,group)}
                 onImage={(id,group)=>{setBossImageModal({id,group});bossImgRef.current?.click();}}
+                onRemoveImage={(id,group)=>handleRemoveBossImage(id,group)}
               />
 
               {/* ── MYRKRHEIM BOSSES ── */}
@@ -2071,6 +2132,7 @@ function AppInner() {
                 onReset={(id)=>handleResetToZero(id,"myrkrheim")}
                 onSetTimer={(id)=>openTimerModal(id,"myrkrheim")}
                 onImage={(id)=>{setBossImageModal({id,group:"myrkrheim"});bossImgRef.current?.click();}}
+                onRemoveImage={(id)=>handleRemoveBossImage(id,"myrkrheim")}
                 onAddChannel={(bossName,color)=>handleAddChannel("myrkrheim",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"myrkrheim")}
                 onRenameBoss={(oldName,newName)=>handleRenameBoss("myrkrheim",oldName,newName)}
@@ -2093,6 +2155,7 @@ function AppInner() {
                 onReset={(id)=>handleResetToZero(id,"live4")}
                 onSetTimer={(id)=>openTimerModal(id,"live4")}
                 onImage={(id)=>{setBossImageModal({id,group:"live4"});bossImgRef.current?.click();}}
+                onRemoveImage={(id)=>handleRemoveBossImage(id,"live4")}
                 onAddChannel={(bossName,color)=>handleAddChannel("live4",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"live4")}
                 onRenameBoss={(oldName,newName)=>handleRenameBoss("live4",oldName,newName)}
@@ -2115,6 +2178,7 @@ function AppInner() {
                 onReset={(id)=>handleResetToZero(id,"canyon")}
                 onSetTimer={(id)=>openTimerModal(id,"canyon")}
                 onImage={(id)=>{setBossImageModal({id,group:"canyon"});bossImgRef.current?.click();}}
+                onRemoveImage={(id)=>handleRemoveBossImage(id,"canyon")}
                 onAddChannel={(bossName,color)=>handleAddChannel("canyon",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"canyon")}
                 onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"canyon",secs)}
@@ -2138,6 +2202,7 @@ function AppInner() {
                 onReset={(id)=>handleResetToZero(id,"lindwurm")}
                 onSetTimer={(id)=>openTimerModal(id,"lindwurm")}
                 onImage={(id)=>{setBossImageModal({id,group:"lindwurm"});bossImgRef.current?.click();}}
+                onRemoveImage={(id)=>handleRemoveBossImage(id,"lindwurm")}
                 onAddChannel={(bossName,color)=>handleAddChannel("lindwurm",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"lindwurm")}
                 onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"lindwurm",secs)}
@@ -2161,6 +2226,7 @@ function AppInner() {
                 onReset={(id)=>handleResetToZero(id,"hilders")}
                 onSetTimer={(id)=>openTimerModal(id,"hilders")}
                 onImage={(id)=>{setBossImageModal({id,group:"hilders"});bossImgRef.current?.click();}}
+                onRemoveImage={(id)=>handleRemoveBossImage(id,"hilders")}
                 onAddChannel={(bossName,color)=>handleAddChannel("hilders",bossName,color)}
                 onRemoveChannel={(id)=>handleRemoveChannel(id,"hilders")}
                 onRespawnEdit={(id,secs)=>handleSetRespawnTime(id,"hilders",secs)}
@@ -3732,7 +3798,7 @@ function FolkvangDungeonCard({ folkvangNormal, folkvangInterserver, canManage, c
 }
 
 // ── Boss Group Panel (full page) ─────────────────────────────────────────────
-function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, canTimer, isAdmin, killFlash, onKill, onReset, onSetTimer, onImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels, onRenameBoss, onRenameChannel }) {
+function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, canTimer, isAdmin, killFlash, onKill, onReset, onSetTimer, onImage, onRemoveImage, onAddChannel, onRemoveChannel, onRespawnEdit, showRespawnEdit, floorLabels, onRenameBoss, onRenameChannel }) {
   const bossNames = [...new Set(bosses.map(b=>b.name))];
   const [editRespawn, setEditRespawn] = useState(null);
   const [collapsed, setCollapsed] = useState(true);
@@ -3828,10 +3894,21 @@ function BossGroupPanel({ title, subtitle, color, bosses, groupKey, canManage, c
                         {/* Compact top row: image + info + status */}
                         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
                           {/* Boss image — 78x78, clickable by admin to upload */}
-                          <div className="boss-img-upload" onClick={()=>isAdmin&&onImage(b.id)}
-                            style={{width:78,height:78,borderRadius:10,background:b.color+"22",border:`2px solid ${b.color}44`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",flexShrink:0,position:"relative",cursor:isAdmin?"pointer":"default"}}>
-                            {b.image ? <img src={b.image} alt={b.name} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span style={{fontSize:28}}>👹</span>}
-                            {isAdmin&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",fontSize:14}} className="boss-img-ov">📷 78×78</div>}
+                          <div style={{position:"relative",flexShrink:0,width:78,height:78}}>
+                            <div className="boss-img-upload" onClick={()=>isAdmin&&onImage(b.id)}
+                              style={{width:78,height:78,borderRadius:10,background:b.color+"22",border:`2px solid ${b.color}44`,display:"flex",alignItems:"center",justifyContent:"center",overflow:"hidden",position:"relative",cursor:isAdmin?"pointer":"default"}}>
+                              {b.image ? <img src={b.image} alt={b.name} style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <span style={{fontSize:28}}>👹</span>}
+                              {isAdmin&&<div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",opacity:0,transition:"opacity 0.2s",fontSize:14}} className="boss-img-ov">📷 Change</div>}
+                            </div>
+                            {/* Remove image button — only shown when boss has a custom image */}
+                            {isAdmin&&b.image&&onRemoveImage&&(
+                              <button
+                                onClick={e=>{e.stopPropagation();onRemoveImage(b.id);}}
+                                title="Remove custom image (restore default icon)"
+                                style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:"50%",background:"rgba(239,68,68,0.85)",border:"1.5px solid rgba(239,68,68,0.6)",color:"#fff",fontSize:9,fontWeight:900,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0,zIndex:10,boxShadow:"0 1px 4px rgba(0,0,0,0.5)"}}>
+                                ✕
+                              </button>
+                            )}
                           </div>
                           <div style={{flex:1,minWidth:0}}>
                             {/* Channel label — admin can click ✏️ to rename inline */}
